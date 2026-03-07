@@ -10,3 +10,28 @@ frontend/dist/
 
 # Credentials
 .env
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+node_modules/
+
+backend/.venv/
+frontend/node_modules/
+.expo/
+__pycache__/
+
+# Python
+backend/.venv/
+**/__pycache__/
+*.pyc
+
+# Expo / React Native
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+
+# Env secrets
+.env
