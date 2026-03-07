@@ -2,11 +2,11 @@ import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import google.generativeai as genai
-from keys import get_gemini_key
+from dotenv import load_dotenv
 
 # Load variables from .env into the environment
-
-gemini_api_key = get_gemini_key()
+load_dotenv()
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 app = FastAPI()
 
