@@ -3,7 +3,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import google.generativeai as genai
 from keys import get_gemini_key
-from request import Request
 
 # Load variables from .env into the environment
 
@@ -19,14 +18,6 @@ if gemini_api_key:
 
 class MedicalRequest(BaseModel):
     user_input: str
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello World"}
-
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str | None = None):
-    return {"item_id": item_id, "q": q}
 
 @app.post("/interpret")
 async def interpret_medical_needs(request: MedicalRequest):
@@ -56,5 +47,41 @@ async def interpret_medical_needs(request: MedicalRequest):
 
         response = model.generate_content(prompt)
         return {"interpretation": response.text}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/summarize")
+async def summarize_location(location: str):
+
+    current_key = gemini_api_key
+    if not current_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
+
+    try:
+        genai.configure(api_key=current_key)
+        
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        prompt = f"""
+        You are an AI assistant designed to summarize locations for medical assistance. 
+        A user has provided the following location:
+        \n{location}\n
+        Please summarize the location in a friendly and informative manner.
+        Include the following information:
+        - Name of the location
+        - Address
+        - Phone number
+        - Website
+        - Operating hours
+        - Services offered
+        - Any other relevant information
+        """
+
+        response = model.generate_content(prompt)
+        return {"summary": response.text}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
