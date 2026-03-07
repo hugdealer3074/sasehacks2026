@@ -3,23 +3,24 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, FlatList, Activity
 import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
+import VoiceInputButton from '../components/VoiceInputButton';
 
 // 1. UPDATE THIS with your laptop's current IP address
-const BACKEND_URL = "http://10.136.25.213:8000"; 
+const BACKEND_URL = "http://10.136.25.213:8000";
 
 export default function SingleFileApp() {
   const [activeTab, setActiveTab] = useState('input'); // Default to 'input' for search
   const [userInput, setUserInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [language, setLanguage] = useState<string | null>(null); // New state for language selection
-  
+
   // 2. Dynamic State for Clinics (replaces static MOCK_CLINICS)
   const [clinics, setClinics] = useState<any[]>([]);
 
   // 3. The Function that links to main.py
   const handleSearch = async () => {
     setLoading(true);
-    
+
     // FAKE BACKEND CALL (Use this until you're off campus Wi-Fi)
     setTimeout(() => {
       const mockResults = [
@@ -27,11 +28,11 @@ export default function SingleFileApp() {
         { id: '2', name: 'Camillus Health Concern', address: '336 NW 5th St', lat: 25.7794, lng: -80.1982, tag: 'Low-Cost' },
         { id: '3', name: 'Open Door Health', address: '1350 NW 14th St', lat: 25.7891, lng: -80.2185, tag: 'Sliding Scale' },
       ];
-      
+
       setClinics(mockResults);
       setActiveTab('list');
       setLoading(false);
-    }, 800); 
+    }, 800);
   };
 
   // --- NEW LANGUAGE SELECTION COMPONENT ---
@@ -40,7 +41,7 @@ export default function SingleFileApp() {
       <Ionicons name="medical" size={60} color="#007AFF" style={{ marginBottom: 20 }} />
       <Text style={styles.langHeader}>Select Language</Text>
       <Text style={styles.langSub}>Choose a language to begin</Text>
-      
+
       <TouchableOpacity style={styles.langButton} onPress={() => setLanguage('English')}>
         <Text style={styles.langButtonText}>English</Text>
       </TouchableOpacity>
@@ -70,10 +71,10 @@ export default function SingleFileApp() {
       >
         {/* Render markers from the dynamic state */}
         {clinics.map(c => (
-          <Marker 
-            key={c.id} 
-            coordinate={{ latitude: c.lat, longitude: c.lng }} 
-            title={c.name} 
+          <Marker
+            key={c.id}
+            coordinate={{ latitude: c.lat, longitude: c.lng }}
+            title={c.name}
             description={c.address}
           />
         ))}
@@ -92,8 +93,9 @@ export default function SingleFileApp() {
         value={userInput}
         onChangeText={setUserInput}
       />
-      <TouchableOpacity 
-        style={styles.button} 
+      <VoiceInputButton onTranscript={(text) => setUserInput(text)} />
+      <TouchableOpacity
+        style={styles.button}
         onPress={handleSearch}
         disabled={loading}
       >
