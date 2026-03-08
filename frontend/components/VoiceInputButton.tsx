@@ -6,9 +6,10 @@ import { transcribeAudio } from '../services/speech';
 
 type Props = {
     onTranscript: (text: string) => void;
+    onAutoSearch?: (text: string) => void;
 };
 
-export default function VoiceInputButton({ onTranscript }: Props) {
+export default function VoiceInputButton({ onTranscript, onAutoSearch }: Props) {
     const [recording, setRecording] = useState<Audio.Recording | null>(null);
     const [isRecording, setIsRecording] = useState(false);
 
@@ -54,7 +55,18 @@ export default function VoiceInputButton({ onTranscript }: Props) {
             }
 
             const result = await transcribeAudio(uri);
-            onTranscript(result.text);
+            const transcriptText = result.text ?? '';
+
+            if (!transcriptText.trim()) {
+                Alert.alert('No speech detected');
+                return;
+            }
+
+            onTranscript(transcriptText);
+
+            if (onAutoSearch) {
+                onAutoSearch(transcriptText);
+            }
         } catch (error) {
             console.error('Failed to stop recording:', error);
             Alert.alert('Could not stop recording');
