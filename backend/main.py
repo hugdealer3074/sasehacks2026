@@ -1,73 +1,271 @@
 import os
-from fastapi import FastAPI, HTTPException
+import re
+from typing import Optional
+
+import google.generativeai as genai
+import requests
+import torch
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google import genai
-from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer, util
-import torch
+
+from keys import get_gemini_key
 
 # Load variables from .env into the environment
 load_dotenv()
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+try:
+    gemini_api_key = get_gemini_key()
+except Exception:
+    print("WARNING: Gemini API key not found. Running in speech-only mode.")
+    gemini_api_key = None
+elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+deepl_api_key = os.getenv("DEEPL_API_KEY")
 
 app = FastAPI()
 
-# --- ADDED FOR FRONTEND CONNECTION ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# --------------------------------------
+
+if gemini_api_key:
+    genai.configure(api_key=gemini_api_key)
+
 
 class MedicalRequest(BaseModel):
     user_input: str
 
-# --- ADDED FOR FRONTEND NAVIGATION ---
+
 class NavigateRequest(BaseModel):
     text: str
     language: str = "English"
 
+
+class TranslateAndSearchRequest(BaseModel):
+    text: str
+    language: str = "English"
+
+
 MOCK_DATABASE_RESULTS = [
-    {"id": "1", "name": "Miami Rescue Mission", "address": "2250 NW 1st Ave", "lat": 25.7984, "lng": -80.1989, "tag": "Free"},
-    {"id": "2", "name": "Camillus Health Concern", "address": "336 NW 5th St", "lat": 25.7794, "lng": -80.1982, "tag": "Low-Cost"},
-    {"id": "3", "name": "Open Door Health", "address": "1350 NW 14th St", "lat": 25.7891, "lng": -80.2185, "tag": "Sliding Scale"},
+    {
+        "id": "1",
+        "name": "Miami Rescue Mission",
+        "address": "2250 NW 1st Ave",
+        "lat": 25.7984,
+        "lng": -80.1989,
+        "tag": "Free",
+    },
+    {
+        "id": "2",
+        "name": "Camillus Health Concern",
+        "address": "336 NW 5th St",
+        "lat": 25.7794,
+        "lng": -80.1982,
+        "tag": "Low-Cost",
+    },
+    {
+        "id": "3",
+        "name": "Open Door Health",
+        "address": "1350 NW 14th St",
+        "lat": 25.7891,
+        "lng": -80.2185,
+        "tag": "Sliding Scale",
+    },
 ]
+
+
+# ----------------------------
+# Transcript Cleaning Function
+# ----------------------------
+def clean_transcript(text: str) -> str:
+    """
+    Remove pauses, filler words, and non-speech annotations
+    """
+
+    if not text:
+        return text
+
+    # Remove anything in parentheses
+    text = re.sub(r"\([^)]*\)", "", text)
+
+    # Remove filler words
+    filler_words = [
+        r"\bum\b",
+        r"\buh\b",
+        r"\bmmm+\b",
+        r"\beh\b",
+        r"\beste\b",
+        r"\bah\b"
+    ]
+
+    for filler in filler_words:
+        text = re.sub(filler, "", text, flags=re.IGNORECASE)
+
+    # Remove stray punctuation except normal sentence punctuation
+    text = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.,!?]", "", text)
+
+    # Normalize whitespace
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+def get_source_lang_code(language: str) -> Optional[str]:
+    normalized = language.strip().lower()
+
+    if normalized in ["español", "espanol", "spanish", "es"]:
+        return "ES"
+    if normalized in ["english", "en"]:
+        return "EN"
+
+    return None
+
+
+def translate_text_with_deepl(text: str, source_lang: str, target_lang: str = "EN") -> str:
+    if not deepl_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="DEEPL_API_KEY is not configured."
+        )
+
+    response = requests.post(
+        "https://api-free.deepl.com/v2/translate",
+        headers={
+            "Authorization": f"DeepL-Auth-Key {deepl_api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "text": [text],
+            "source_lang": source_lang,
+            "target_lang": target_lang,
+        },
+        timeout=60,
+    )
+
+    if response.status_code != 200:
+        print("DeepL error:", response.text)
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    result = response.json()
+    translated = result.get("translations", [{}])[0].get("text", "").strip()
+
+    if not translated:
+        raise HTTPException(status_code=500, detail="DeepL returned an empty translation.")
+
+    return translated
+
+
+@app.get("/")
+def root():
+    return {"message": "Backend is running."}
+
+
+@app.post("/speech/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    if not elevenlabs_api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="ELEVENLABS_API_KEY is not configured."
+        )
+
+    contents = await file.read()
+
+    headers = {
+        "xi-api-key": elevenlabs_api_key
+    }
+
+    files = {
+        "file": (file.filename, contents, file.content_type or "audio/m4a")
+    }
+
+    data = {
+        "model_id": "scribe_v1"
+    }
+
+    response = requests.post(
+        "https://api.elevenlabs.io/v1/speech-to-text",
+        headers=headers,
+        files=files,
+        data=data,
+        timeout=60
+    )
+
+    if response.status_code != 200:
+        print("ElevenLabs error:", response.text)
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    result = response.json()
+
+    raw_text = result.get("text", "")
+    cleaned_text = clean_transcript(raw_text)
+
+    return {
+        "text": cleaned_text,
+        "raw": result
+    }
+
+
+@app.post("/translate-and-search")
+async def translate_and_search(request: TranslateAndSearchRequest):
+    raw_text = request.text.strip()
+
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Text is required.")
+
+    source_lang = get_source_lang_code(request.language)
+
+    if source_lang == "EN":
+        translated_text = raw_text
+
+    elif source_lang == "ES":
+        translated_text = translate_text_with_deepl(
+            raw_text,
+            source_lang="ES",
+            target_lang="EN"
+        )
+
+    else:
+        translated_text = raw_text
+
+    return {
+        "original_text": raw_text,
+        "translated_text": translated_text,
+        "clinics": MOCK_DATABASE_RESULTS,
+    }
+
 
 @app.post("/navigate")
 async def navigate(request: NavigateRequest):
-    print(f"Gemini processing for {request.language}: {request.text}")
     try:
-        client = genai.Client(api_key=gemini_api_key)
-        prompt = f"User is asking in {request.language}: '{request.text}'. Give a 1-sentence helpful response in {request.language}."
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        prompt = f"User is asking in {request.language}: '{request.text}'. Give a short helpful response in {request.language}."
+        response = model.generate_content(prompt)
         reply = response.text
     except Exception as e:
         print(f"Error in Gemini processing for navigate: {e}")
         reply = "I found these clinics for you."
-    
+
     return {
         "reply": reply,
-        "clinics": MOCK_DATABASE_RESULTS 
+        "clinics": MOCK_DATABASE_RESULTS
     }
-# --------------------------------------
+
 
 @app.post("/interpret")
 async def interpret_medical_needs(request: MedicalRequest):
-
     current_key = gemini_api_key
     if not current_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
 
     try:
-        # Configure Gemini based on the environment variable
-# The key should be loaded before running the app
-
-        client = genai.Client(api_key=current_key)
+        genai.configure(api_key=current_key)
         
         # Using an appropriate Gemini model for fast text tasks
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
         prompt = f"""
             You are a medical needs interpreter helping connect patients to appropriate healthcare services.
@@ -90,51 +288,53 @@ async def interpret_medical_needs(request: MedicalRequest):
             - access_needs: practical needs (e.g. "low-cost", "wheelchair accessible", "Spanish-speaking")
             - urgency: how urgent this seems (rank numerically from 1 to 10, with 1 being routine and 10 being an emergency)
 
-            Return ONLY a JSON object in this exact format, with no explanation:
-            
-            symptoms: [keyword1, keyword2, ...],
-            specialty: [keyword1, keyword2, ...],
-            demographics: [keyword1, keyword2, ...],
-            access_needs: [keyword1, keyword2, ...],
-            urgency: [number_ranking]
+            Return ONLY a valid JSON object in this exact format, with no explanation:
+
+            {{
+              "symptoms": ["keyword1", "keyword2"],
+              "specialty": ["keyword1", "keyword2"],
+              "demographics": ["keyword1", "keyword2"],
+              "access_needs": ["keyword1", "keyword2"],
+              "urgency": 5
+            }}
 
             If a category has no relevant keywords, return an empty list [].
-            If the input is completely unintelligible, return "error": "unable to interpret"
+            If the input is completely unintelligible, return:
+            {{"error": "unable to interpret"}}
         
         """
 
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = model.generate_content(prompt)
         return {"interpretation": response.text}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/summarize")
 async def summarize_location(location: str):
-
     current_key = gemini_api_key
     if not current_key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured.")
 
     try:
-        client = genai.Client(api_key=gemini_api_key)
+        genai.configure(api_key=current_key)
+        
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
         prompt = f"""
-        You are an AI assistant designed to summarize locations for medical assistance. 
-        A user has provided the following location:
-        \n{location}\n
-        Please summarize the location in a friendly and informative manner.
-        Include the following information:
-        - Name of the location
-        - Address
-        - Phone number
-        - Website
-        - Operating hours
-        - Services offered
-        - Any other relevant information
+        Summarize this medical clinic location:
+
+        {location}
+
+        Include:
+        - address
+        - services
+        - hours
+        - phone number if available
         """
 
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = model.generate_content(prompt)
         return {"summary": response.text}
 
     except Exception as e:
