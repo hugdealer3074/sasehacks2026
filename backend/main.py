@@ -287,6 +287,7 @@ async def navigate(request: NavigateRequest):
                 "phone": clinic.phone,
                 "match_score": match_data["score"],
                 "aiSummary": clinic.aisummary,
+                "translatedSummary": translate_summary(clinic.aisummary, request.isSpanish),
                 "lowCost": "Low" in clinic.price_tag or "NAFC" in clinic.price_tag,
             })
         top_clinics.sort(key=lambda x: x["match_score"], reverse=True)
