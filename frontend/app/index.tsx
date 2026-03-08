@@ -17,37 +17,38 @@ import {
   View,
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle, Ellipse, Line, Path, Polyline, Rect } from 'react-native-svg';
 import * as Clipboard from 'expo-clipboard';
 import { Audio } from 'expo-av';
 
-// ── ElevenLabs config ──────────────────────────────────────────────────────────
+// ── ElevenLabs config ─────────────────────────────────────────────────────────
 const ELEVENLABS_API_KEY = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY ?? '';
 const ELEVENLABS_STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
+const ELEVENLABS_TTS_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  primary: '#73c7e3',
-  primaryDark: '#3fa8cc',
-  primaryMid: '#9dd5ea',
-  primaryLight: '#dff3fa',
-  primaryXlight: '#f0f9fd',
-  successDark: '#1E8A62',
-  warnDark: '#C4622C',
-  warnLight: '#FEF3EB',
-  nd1: '#1A1C20',
-  nd2: '#2D3035',
-  nd3: '#4A4D54',
-  nd4: '#6B6E78',
-  nd5: '#9B9CA3',
-  nl1: '#C5C6CC',
-  nl2: '#D8D9DE',
-  nl3: '#E5E6EA',
-  nl4: '#F2F3F5',
-  nl5: '#FFFFFF',
+  blueHero: '#9BAEEA',
+  blueMid: '#7B96DF',
+  blueDeep: '#5470C6',
+  bluePale: '#D0DAFA',
+  blueXpale: '#EDF0FB',
+  pinkSoft: '#F4B8C8',
+  pinkMid: '#EF8FA8',
+  pinkPale: '#FCE8EE',
+  white: '#FFFFFF',
+  offWhite: '#F4F5FB',
+  ink: '#1E2340',
+  inkMid: '#4A5280',
+  inkSoft: '#8E93B8',
+  border: '#DDE3F4',
+  greenBg: '#E5F5ED',
+  greenText: '#1F8A55',
+  redBg: '#FDF0F3',
+  redText: '#C0354F',
 } as const;
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ── Static data ───────────────────────────────────────────────────────────────
 const LANG_WORDS = [
@@ -74,7 +75,6 @@ const LANGUAGES = [
   { code: 'so', name: 'Soomaali', native: 'Somali', flag: '🇸🇴' },
 ] as const;
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 type Language = typeof LANGUAGES[number];
 type AppStep = 'language' | 'location' | 'query' | 'searching' | 'loading' | 'results';
 
@@ -85,119 +85,532 @@ type Clinic = {
   lat: number;
   lng: number;
   lowCost: boolean;
-  status: 'Open' | 'Closed';
-  opensAt?: string;
-  distance: string;
   hours: string;
   phone: string;
   aiSummary: string;
+  englishSummary: string;
+  spanishSummary: string;
+  matchScore: number;
+  tag: string;
 };
 
-// ── Mock clinic data ───────────────────────────────────────────────────────────
-const MOCK_CLINICS: Clinic[] = [
-  {
-    id: '1',
-    name: 'Gainesville Urgent Care Center',
-    address: '3510 SW Archer Rd, Gainesville, FL',
-    lat: 29.6393, lng: -82.3487,
-    lowCost: true, status: 'Open',
-    distance: '0.8 mi',
-    hours: 'Mon–Fri 8am–8pm · Sat–Sun 9am–5pm',
-    phone: '(352) 555-0182',
-    aiSummary: 'Walk-in friendly. Accepts most major insurance and offers sliding-scale fees for uninsured patients. Best choice for immediate walk-in care with the shortest wait times.',
-  },
-  {
-    id: '2',
-    name: 'UF Health Primary Care – Tower Hill',
-    address: '4037 NW 86th Terrace, Gainesville, FL',
-    lat: 29.6763, lng: -82.3812,
-    lowCost: false, status: 'Open',
-    distance: '1.4 mi',
-    hours: 'Mon–Fri 8am–5pm · Closed weekends',
-    phone: '(352) 265-0830',
-    aiSummary: 'Academic medical center clinic. Same-day slots often available. Ideal if you prefer a more thorough clinical evaluation — physicians here are UF Health faculty.',
-  },
-  {
-    id: '3',
-    name: 'Meridian Behavioral Health Clinic',
-    address: '4300 SW 13th St, Gainesville, FL',
-    lat: 29.6283, lng: -82.3558,
-    lowCost: true, status: 'Closed', opensAt: '8am',
-    distance: '2.1 mi',
-    hours: 'Mon–Fri 8am–6pm · Sat 9am–2pm',
-    phone: '(352) 374-5600',
-    aiSummary: 'Sliding-scale fees available. Also offers general practitioner services. A good option for budget-conscious patients — reopens at 8am if timing is not urgent.',
-  },
-];
+const UI_TEXT = {
+  en: {
+    stepOf: (step: number, total: number) => `Step ${step} of ${total}`,
+    continue: 'Continue',
+    searchLanguage: 'Search language…',
 
-// ── Shared sub-component: ClinicBadges ────────────────────────────────────────
-// Extracted to module level so React never sees a new component type on re-render.
-function ClinicBadges({ clinic }: { clinic: Clinic }) {
+    enableLocation: 'Enable Location',
+    locationSub:
+      'CareFind uses your location to find the nearest clinics and care providers close to you.',
+    privacyProtected: 'Your privacy is protected',
+    privacyBody:
+      'Your location is only used to find nearby care. It is never stored or shared.',
+    nearbyClinicsOnly: 'Nearby clinics only',
+    nearbyClinicsOnlyRest: ' — results within your area',
+    oneTimeUse: 'One-time use',
+    oneTimeUseRest: " — we don't track your movements",
+    noAccountRequired: 'No account required',
+    noAccountRequiredRest: ' — anonymous by default',
+    allowLocation: 'Allow Location',
+    enterManually: 'Enter manually instead',
+    locationRequired: 'Location Required',
+    locationRequiredBody:
+      'Please allow location services. Go to Settings and enable Location for CareFind.',
+    ok: 'OK',
+
+    signIn: 'Sign In',
+    howCanWeHelp: 'How can we help?',
+    querySub: 'Describe your symptoms or the kind of care you need',
+    speak: 'Speak',
+    text: 'Text',
+    recordAgain: 'Record Again',
+    startSpeaking: 'Start Speaking',
+    listening: 'Listening…',
+    transcribed: 'Transcribed',
+    typeSymptoms: 'Start typing your symptoms…',
+    findCareNearMe: 'Find Care Near Me',
+    emergencyDisclaimer: 'For emergencies, always call 911 immediately.',
+
+    recordingError: 'Recording error',
+    noAudioCreated: 'No audio file was created.',
+    missingApiKey: 'Missing API key',
+    missingElevenLabsKey: 'ELEVENLABS_API_KEY is not set.',
+    noSpeechDetected: 'No speech detected',
+    noSpeechDetectedBody:
+      'We could not transcribe any speech from that recording.',
+    transcriptionFailed: 'Transcription failed',
+    transcriptionFailedBody:
+      'We could not turn that recording into text.',
+
+    findingProviders: 'Finding nearby providers',
+    takesFewSeconds: 'This usually takes a few seconds',
+
+    nearbyResults: 'Nearby Results',
+
+    response: 'Response',
+    read: 'Read',
+    loading: 'Loading…',
+    clinicsFound: (count: number) => `${count} Clinics Found`,
+    tapToExpand: 'Tap to expand',
+    directions: 'Directions',
+    call: 'Call',
+    noResults: 'No results found',
+    noResultsBody: 'Try describing your symptoms in a little more detail.',
+    summary: 'Summary',
+    address: 'Address',
+    hours: 'Hours',
+    phone: 'Phone',
+    match: (percent: number) => `Match ${percent}%`,
+    lowCost: 'Low Cost',
+
+    noOverviewAvailable: 'No overview available',
+    noOverviewAvailableBody:
+      'This clinic does not have an AI overview to read aloud yet.',
+    audioError: 'Audio error',
+    audioErrorBody: 'We could not read this clinic card out loud.',
+
+    missingInfo: 'Missing info',
+    missingInfoBody: 'Please type or speak your medical need first.',
+    searchError: 'Search error',
+    searchFailedBody: 'We could not search for clinics.',
+    couldNotLoadResults: 'We could not load results right now.',
+    foundClinics: 'I found these clinics for you.',
+  },
+  es: {
+    stepOf: (step: number, total: number) => `Paso ${step} de ${total}`,
+    continue: 'Continuar',
+    searchLanguage: 'Buscar idioma…',
+
+    enableLocation: 'Activar ubicación',
+    locationSub:
+      'CareFind usa tu ubicación para encontrar las clínicas y centros de atención más cercanos a ti.',
+    privacyProtected: 'Tu privacidad está protegida',
+    privacyBody:
+      'Tu ubicación solo se usa para encontrar atención cercana. Nunca se guarda ni se comparte.',
+    nearbyClinicsOnly: 'Solo clínicas cercanas',
+    nearbyClinicsOnlyRest: ' — resultados en tu área',
+    oneTimeUse: 'Uso único',
+    oneTimeUseRest: ' — no rastreamos tus movimientos',
+    noAccountRequired: 'No necesitas cuenta',
+    noAccountRequiredRest: ' — anónimo por defecto',
+    allowLocation: 'Permitir ubicación',
+    enterManually: 'Ingresar manualmente',
+    locationRequired: 'Se requiere ubicación',
+    locationRequiredBody:
+      'Permite los servicios de ubicación. Ve a Configuración y activa la ubicación para CareFind.',
+    ok: 'OK',
+
+    signIn: 'Iniciar sesión',
+    howCanWeHelp: '¿Cómo podemos ayudarte?',
+    querySub: 'Describe tus síntomas o el tipo de atención que necesitas',
+    speak: 'Hablar',
+    text: 'Texto',
+    recordAgain: 'Grabar de nuevo',
+    startSpeaking: 'Comenzar a hablar',
+    listening: 'Escuchando…',
+    transcribed: 'Transcrito',
+    typeSymptoms: 'Escribe tus síntomas…',
+    findCareNearMe: 'Buscar atención cerca de mí',
+    emergencyDisclaimer: 'En emergencias, llama al 911 de inmediato.',
+
+    recordingError: 'Error de grabación',
+    noAudioCreated: 'No se creó ningún archivo de audio.',
+    missingApiKey: 'Falta la clave API',
+    missingElevenLabsKey: 'ELEVENLABS_API_KEY no está configurada.',
+    noSpeechDetected: 'No se detectó voz',
+    noSpeechDetectedBody:
+      'No pudimos transcribir ninguna voz de esa grabación.',
+    transcriptionFailed: 'Falló la transcripción',
+    transcriptionFailedBody:
+      'No pudimos convertir esa grabación en texto.',
+
+    findingProviders: 'Buscando proveedores cercanos',
+    takesFewSeconds: 'Esto suele tardar unos segundos',
+
+    nearbyResults: 'Resultados cercanos',
+
+    response: 'Respuesta',
+    read: 'Leer',
+    loading: 'Cargando…',
+    clinicsFound: (count: number) => `${count} Clínicas encontradas`,
+    tapToExpand: 'Toca para abrir',
+    directions: 'Direcciones',
+    call: 'Llamar',
+    noResults: 'No se encontraron resultados',
+    noResultsBody: 'Intenta describir tus síntomas con más detalle.',
+    summary: 'Resumen',
+    address: 'Dirección',
+    hours: 'Horario',
+    phone: 'Teléfono',
+    match: (percent: number) => `Coincidencia ${percent}%`,
+    lowCost: 'Bajo costo',
+
+    noOverviewAvailable: 'No hay resumen disponible',
+    noOverviewAvailableBody:
+      'Esta clínica todavía no tiene un resumen de IA para leer en voz alta.',
+    audioError: 'Error de audio',
+    audioErrorBody: 'No pudimos leer esta tarjeta de clínica en voz alta.',
+
+    missingInfo: 'Falta información',
+    missingInfoBody: 'Describe o dicta tu necesidad médica primero.',
+    searchError: 'Error de búsqueda',
+    searchFailedBody: 'No pudimos buscar clínicas.',
+    couldNotLoadResults: 'No pudimos cargar resultados en este momento.',
+    foundClinics: 'Encontré estas clínicas para ti.',
+  },
+} as const;
+
+function getUIText(isSpanish: boolean) {
+  return isSpanish ? UI_TEXT.es : UI_TEXT.en;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SVG ICONS
+// ─────────────────────────────────────────────────────────────────────────────
+const SignalIcon = () => (
+  <Svg width={14} height={10} viewBox="0 0 14 10" fill="none">
+    <Rect x={0} y={6} width={2.5} height={4} rx={1} fill="rgba(255,255,255,0.8)" />
+    <Rect x={3.5} y={4} width={2.5} height={6} rx={1} fill="rgba(255,255,255,0.8)" />
+    <Rect x={7} y={2} width={2.5} height={8} rx={1} fill="rgba(255,255,255,0.8)" />
+    <Rect x={10.5} y={0} width={2.5} height={10} rx={1} fill="rgba(255,255,255,0.8)" />
+  </Svg>
+);
+
+const BatteryIcon = () => (
+  <Svg width={18} height={10} viewBox="0 0 18 10" fill="none">
+    <Rect x={0} y={1} width={15} height={8} rx={2} stroke="rgba(255,255,255,0.7)" strokeWidth={1.2} />
+    <Rect x={1.5} y={2.5} width={10} height={5} rx={1} fill="rgba(255,255,255,0.85)" />
+    <Rect x={15.5} y={3.5} width={2} height={3} rx={1} fill="rgba(255,255,255,0.6)" />
+  </Svg>
+);
+
+const HeroArc = () => (
+  <Svg width="100%" height={48} viewBox="0 0 300 48" preserveAspectRatio="none">
+    <Path d="M0,48 L0,30 Q75,6 150,20 Q225,34 300,12 L300,48 Z" fill="rgba(255,255,255,0.12)" />
+    <Path d="M0,48 L0,36 Q75,16 150,28 Q225,40 300,22 L300,48 Z" fill="rgba(255,255,255,0.09)" />
+    <Path d="M0,48 L0,48 Q75,30 150,40 Q225,48 300,36 L300,48 Z" fill={C.offWhite} />
+  </Svg>
+);
+
+const GlobeIcon = () => (
+  <Svg width={26} height={26} viewBox="0 0 26 26" fill="none">
+    <Circle cx={13} cy={13} r={10} stroke="white" strokeWidth={1.5} strokeOpacity={0.9} />
+    <Ellipse cx={13} cy={13} rx={4.5} ry={10} stroke="white" strokeWidth={1.5} strokeOpacity={0.7} />
+    <Line x1={3} y1={13} x2={23} y2={13} stroke="white" strokeWidth={1.5} strokeOpacity={0.7} />
+    <Line x1={4.5} y1={8} x2={21.5} y2={8} stroke="white" strokeWidth={1.2} strokeOpacity={0.5} />
+    <Line x1={4.5} y1={18} x2={21.5} y2={18} stroke="white" strokeWidth={1.2} strokeOpacity={0.5} />
+  </Svg>
+);
+
+const SearchIcon = ({ color = C.inkSoft }: { color?: string }) => (
+  <Svg width={15} height={15} viewBox="0 0 15 15" fill="none">
+    <Circle cx={6.5} cy={6.5} r={4.5} stroke={color} strokeWidth={1.5} />
+    <Line x1={10} y1={10} x2={13.5} y2={13.5} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+  </Svg>
+);
+
+const ArrowRightIcon = () => (
+  <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
+    <Line x1={1} y1={5.5} x2={10} y2={5.5} stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+    <Polyline points="6,2 10,5.5 6,9" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const CheckIcon = () => (
+  <Svg width={10} height={8} viewBox="0 0 10 8" fill="none">
+    <Polyline points="1,4 4,7 9,1" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const BackArrowWhite = () => (
+  <Svg width={12} height={10} viewBox="0 0 12 10" fill="none">
+    <Line x1={11} y1={5} x2={1} y2={5} stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+    <Polyline points="5,1 1,5 5,9" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const BackArrowDark = () => (
+  <Svg width={11} height={9} viewBox="0 0 11 9" fill="none">
+    <Line x1={10} y1={4.5} x2={1} y2={4.5} stroke={C.inkMid} strokeWidth={1.4} strokeLinecap="round" />
+    <Polyline points="4.5,1 1,4.5 4.5,8" stroke={C.inkMid} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const LockIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+    <Rect x={3} y={8} width={12} height={9} rx={2} stroke={C.blueDeep} strokeWidth={1.4} />
+    <Path d="M6 8V6a3 3 0 0 1 6 0v2" stroke={C.blueDeep} strokeWidth={1.4} strokeLinecap="round" />
+  </Svg>
+);
+
+const PinIcon = () => (
+  <Svg width={32} height={38} viewBox="0 0 32 38" fill="none">
+    <Path d="M16 2C9.373 2 4 7.373 4 14C4 21.732 16 36 16 36C16 36 28 21.732 28 14C28 7.373 22.627 2 16 2Z" fill="white" fillOpacity={0.9} />
+    <Circle cx={16} cy={14} r={5} fill={C.blueHero} />
+  </Svg>
+);
+
+const LocationPinBtnIcon = () => (
+  <Svg width={14} height={16} viewBox="0 0 14 16" fill="none">
+    <Path d="M7 1C4.239 1 2 3.239 2 6C2 9.5 7 15 7 15C7 15 12 9.5 12 6C12 3.239 9.761 1 7 1Z" stroke="white" strokeWidth={1.4} />
+    <Circle cx={7} cy={6} r={2} fill="white" />
+  </Svg>
+);
+
+const StethoscopeIcon = () => (
+  <Svg width={28} height={28} viewBox="0 0 28 28" fill="none">
+    <Path d="M8 4v8a6 6 0 0 0 12 0V4" stroke="white" strokeWidth={1.6} strokeLinecap="round" />
+    <Line x1={8} y1={4} x2={8} y2={8} stroke="white" strokeWidth={1.6} strokeLinecap="round" />
+    <Line x1={20} y1={4} x2={20} y2={8} stroke="white" strokeWidth={1.6} strokeLinecap="round" />
+    <Path d="M14 18v3a4 4 0 0 0 8 0v-2" stroke="white" strokeWidth={1.6} strokeLinecap="round" />
+    <Circle cx={22} cy={19} r={2} stroke="white" strokeWidth={1.4} />
+  </Svg>
+);
+
+const PersonIcon = () => (
+  <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
+    <Circle cx={5.5} cy={4} r={2.5} stroke="white" strokeWidth={1.3} />
+    <Path d="M1 10c0-2.485 2.015-4.5 4.5-4.5S10 7.515 10 10" stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+  </Svg>
+);
+
+const MicSmIcon = ({ color }: { color: string }) => (
+  <Svg width={13} height={14} viewBox="0 0 13 14" fill="none">
+    <Rect x={4} y={1} width={5} height={8} rx={2.5} stroke={color} strokeWidth={1.3} />
+    <Path d="M2 8a4.5 4.5 0 0 0 9 0" stroke={color} strokeWidth={1.3} strokeLinecap="round" />
+    <Line x1={6.5} y1={12.5} x2={6.5} y2={13} stroke={color} strokeWidth={1.3} strokeLinecap="round" />
+  </Svg>
+);
+
+const MicLgIcon = () => (
+  <Svg width={18} height={20} viewBox="0 0 18 20" fill="none">
+    <Rect x={5} y={1} width={8} height={12} rx={4} stroke="white" strokeWidth={1.5} />
+    <Path d="M2 11a7 7 0 0 0 14 0" stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+    <Line x1={9} y1={18} x2={9} y2={19.5} stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+  </Svg>
+);
+
+const TextLinesIcon = () => (
+  <Svg width={13} height={13} viewBox="0 0 13 13" fill="none">
+    <Line x1={2} y1={4} x2={11} y2={4} stroke={C.inkSoft} strokeWidth={1.3} strokeLinecap="round" />
+    <Line x1={2} y1={6.5} x2={11} y2={6.5} stroke={C.inkSoft} strokeWidth={1.3} strokeLinecap="round" />
+    <Line x1={2} y1={9} x2={7} y2={9} stroke={C.inkSoft} strokeWidth={1.3} strokeLinecap="round" />
+  </Svg>
+);
+
+const InfoIcon = () => (
+  <Svg width={14} height={14} viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
+    <Circle cx={7} cy={7} r={5.5} stroke={C.pinkMid} strokeWidth={1.3} />
+    <Line x1={7} y1={4.5} x2={7} y2={7.5} stroke={C.pinkMid} strokeWidth={1.3} strokeLinecap="round" />
+    <Circle cx={7} cy={9.5} r={0.7} fill={C.pinkMid} />
+  </Svg>
+);
+
+const PhoneIcon = ({ color = 'white' }: { color?: string }) => (
+  <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
+    <Path d="M2 1h2.5l1 2.5L4 5a7 7 0 0 0 2 2l1.5-1.5L10 6.5V9a1 1 0 0 1-1 1C3.477 10 1 7.523 1 4.5A2.5 2.5 0 0 1 2 1Z" stroke={color} strokeWidth={1.2} />
+  </Svg>
+);
+
+const CopyIcon = () => (
+  <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+    <Rect x={1} y={3} width={8} height={8} rx={1.5} stroke={C.inkMid} strokeWidth={1.2} />
+    <Path d="M4 3V2a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H9" stroke={C.inkMid} strokeWidth={1.2} strokeLinecap="round" />
+  </Svg>
+);
+
+const SparkleIcon = () => (
+  <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+    <Path d="M6 1l1.18 3.09L10.5 5l-3.32.91L6 11l-1.18-5.09L1.5 5l3.32-.91Z" fill={C.blueDeep} />
+  </Svg>
+);
+
+const MapQIcon = () => (
+  <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+    <Circle cx={5} cy={5} r={3.5} stroke={C.inkSoft} strokeWidth={1.2} />
+    <Line x1={7.5} y1={7.5} x2={10.5} y2={10.5} stroke={C.inkSoft} strokeWidth={1.2} strokeLinecap="round" />
+  </Svg>
+);
+
+const HospitalIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+    <Rect x={2} y={7} width={14} height={10} rx={2} stroke={C.blueDeep} strokeWidth={1.3} />
+    <Path d="M6 7V5a3 3 0 0 1 6 0v2" stroke={C.blueDeep} strokeWidth={1.3} />
+    <Line x1={9} y1={10} x2={9} y2={14} stroke={C.blueDeep} strokeWidth={1.3} strokeLinecap="round" />
+    <Line x1={7} y1={12} x2={11} y2={12} stroke={C.blueDeep} strokeWidth={1.3} strokeLinecap="round" />
+  </Svg>
+);
+
+const PersonCardIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+    <Circle cx={9} cy={6} r={3} stroke={C.pinkMid} strokeWidth={1.3} />
+    <Path d="M3 16c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke={C.pinkMid} strokeWidth={1.3} strokeLinecap="round" />
+  </Svg>
+);
+
+const StarIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+    <Path d="M9 2L11 7H16L12 10.5L13.5 15.5L9 12.5L4.5 15.5L6 10.5L2 7H7Z" stroke={C.blueDeep} strokeWidth={1.3} strokeLinejoin="round" />
+  </Svg>
+);
+
+const SpeakerIcon = ({ color = C.blueDeep }: { color?: string }) => (
+  <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+    <Path d="M3 6H5.5L9 3V13L5.5 10H3V6Z" stroke={color} strokeWidth={1.4} strokeLinejoin="round" />
+    <Path d="M11 5C11.8 5.8 12.3 6.8 12.3 8C12.3 9.2 11.8 10.2 11 11" stroke={color} strokeWidth={1.4} strokeLinecap="round" />
+  </Svg>
+);
+
+// ── Backend config / navigate helpers ────────────────────────────────────────
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, '') ??
+  'http://10.138.250.241:8000';
+
+type NavigateClinicResponse = {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  tag?: string;
+  hours?: string | null;
+  phone?: string | null;
+  match_score?: number;
+  aisummary?: string;
+  translatedSummary?: string | null;
+  lowCost?: boolean;
+};
+
+type NavigateResponse = {
+  reply?: string;
+  clinics?: NavigateClinicResponse[];
+};
+
+function getNavigateLanguage(selectedLang: Language | null): 'English' | 'Spanish' {
+  return selectedLang?.code === 'es' ? 'Spanish' : 'English';
+}
+
+function mapClinicFromBackend(item: NavigateClinicResponse): Clinic {
+  const englishSummary = item.aisummary?.trim() || 'No summary available.';
+  const spanishSummary = item.translatedSummary?.trim() || englishSummary;
+
+  return {
+    id: item.id ?? Math.random().toString(),
+    name: item.name ?? 'Unknown clinic',
+    address: item.address ?? 'Address unavailable',
+    lat: typeof item.lat === 'number' ? item.lat : 29.652,
+    lng: typeof item.lng === 'number' ? item.lng : -82.372,
+    lowCost: Boolean(item.lowCost),
+    hours: item.hours?.trim() || 'Hours unavailable',
+    phone: item.phone?.trim() || 'Phone unavailable',
+    aiSummary: englishSummary,
+    englishSummary,
+    spanishSummary,
+    matchScore: typeof item.match_score === 'number' ? item.match_score : 0,
+    tag: item.tag?.trim() || '',
+  };
+}
+
+async function fetchNavigateResults(text: string, selectedLang: Language | null): Promise<{
+  reply: string;
+  clinics: Clinic[];
+}> {
+  const response = await fetch(`${BACKEND_URL}/navigate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      language: getNavigateLanguage(selectedLang),
+    }),
+  });
+
+  const rawText = await response.text();
+  let parsed: NavigateResponse = {};
+
+  try {
+    parsed = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw new Error(`Backend returned invalid JSON: ${rawText}`);
+  }
+
+  if (!response.ok) {
+    const detail =
+      typeof (parsed as any)?.detail === 'string'
+        ? (parsed as any).detail
+        : rawText || 'Navigation request failed.';
+    throw new Error(detail);
+  }
+
+  return {
+    reply: parsed.reply?.trim() || 'I found these clinics for you.',
+    clinics: Array.isArray(parsed.clinics) ? parsed.clinics.map(mapClinicFromBackend) : [],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED COMPONENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StatusBarRow() {
+  return null;
+}
+
+function HeroWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <View style={s.badgesRow}>
-      {clinic.lowCost && (
-        <View style={s.badge}>
-          <Ionicons name="arrow-down-circle-outline" size={19} color={C.primaryDark} />
-          <Text style={[s.badgeText, { color: C.primaryDark }]}>Low Cost</Text>
-        </View>
-      )}
-      <View style={s.badge}>
-        <Ionicons name="location-outline" size={19} color={C.nd4} />
-        <Text style={[s.badgeText, { color: C.nd4 }]}>{clinic.distance}</Text>
-      </View>
-      <View style={s.badge}>
-        <Ionicons
-          name={clinic.status === 'Open' ? 'checkmark-circle-outline' : 'close-circle-outline'}
-          size={19}
-          color={clinic.status === 'Open' ? C.successDark : C.warnDark}
-        />
-        <Text style={[s.badgeText, { color: clinic.status === 'Open' ? C.successDark : C.warnDark }]}>
-          {clinic.status === 'Open' ? 'Open' : `Closed · ${clinic.opensAt}`}
-        </Text>
-      </View>
+    <View style={s.hero}>
+      {children}
+      <HeroArc />
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ONBOARDING PROGRESS BAR
-// step: 1 = Language, 2 = Location  (out of 2 total onboarding steps)
-// ─────────────────────────────────────────────────────────────────────────────
-function OnboardingProgressBar({ step }: { step: 1 | 2 }) {
+function ClinicBadge({ text, variant }: { text: string; variant: 'green' | 'blue' | 'red' }) {
+  const bg = variant === 'green' ? C.greenBg : variant === 'red' ? C.redBg : C.blueXpale;
+  const color = variant === 'green' ? C.greenText : variant === 'red' ? C.redText : C.blueDeep;
+  return <View style={[s.badge, { backgroundColor: bg }]}><Text style={[s.badgeText, { color }]}>{text}</Text></View>;
+}
+
+function ClinicBadges({ clinic, isSpanish }: { clinic: Clinic; isSpanish: boolean }) {
+  const t = getUIText(isSpanish);
+  const matchPercent = Math.max(0, Math.min(100, Math.round(clinic.matchScore * 100)));
+
+  return (
+    <View style={s.badgesRow}>
+      <ClinicBadge
+        text={t.match(matchPercent)}
+        variant="green"
+      />
+      {clinic.lowCost && (
+        <ClinicBadge text={t.lowCost} variant="blue" />
+      )}
+      {!!clinic.tag && <ClinicBadge text={clinic.tag} variant="blue" />}
+    </View>
+  );
+}
+
+function OnboardingProgressBar({ step, isSpanish = false }: { step: 1 | 2; isSpanish?: boolean }) {
+  const t = getUIText(isSpanish);
   const fillAnim = useRef(new Animated.Value(step === 1 ? 0.5 : 1)).current;
 
   useEffect(() => {
-    Animated.timing(fillAnim, {
-      toValue: step === 1 ? 0.5 : 1,
-      duration: 380,
-      useNativeDriver: false,
-    }).start();
+    Animated.timing(fillAnim, { toValue: step === 1 ? 0.5 : 1, duration: 380, useNativeDriver: false }).start();
   }, [step, fillAnim]);
 
-  const fillWidth = fillAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  const fillWidth = fillAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
   return (
-    <View style={s.onboardingFooter}>
-      {/* Step dots */}
-      <View style={s.progressStepRow}>
+    <View style={s.progFooter}>
+      <View style={s.progMeta}>
         {[1, 2].map(n => (
-          <View
-            key={n}
-            style={[
-              s.progressDot,
-              n <= step ? s.progressDotActive : s.progressDotInactive,
-            ]}
-          />
+          <View key={n} style={[s.progDot, n <= step ? s.progDotOn : s.progDotOff]} />
         ))}
-        <Text style={s.progressLabel}>Step {step} of 2</Text>
+        <Text style={s.progLabel}>{t.stepOf(step, 2)}</Text>
       </View>
-
-      {/* Animated fill bar */}
-      <View style={s.progressTrack}>
-        <Animated.View style={[s.progressFill, { width: fillWidth }]} />
+      <View style={s.progTrack}>
+        <Animated.View style={[s.progFill, { width: fillWidth }]} />
       </View>
     </View>
   );
@@ -205,12 +618,8 @@ function OnboardingProgressBar({ step }: { step: 1 | 2 }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LANGUAGE SCREEN
-// Extracted to top level: state (search, langIndex) survives parent re-renders.
 // ─────────────────────────────────────────────────────────────────────────────
-type LanguageScreenProps = {
-  selectedLang: Language | null;
-  onSelect: (lang: Language) => void;
-};
+type LanguageScreenProps = { selectedLang: Language | null; onSelect: (lang: Language) => void };
 
 function LanguageScreen({ selectedLang, onSelect }: LanguageScreenProps) {
   const [search, setSearch] = useState('');
@@ -233,224 +642,201 @@ function LanguageScreen({ selectedLang, onSelect }: LanguageScreenProps) {
   );
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" />
+    <View style={s.screen}>
+      <StatusBar barStyle="light-content" />
 
-      <View style={s.langHeader}>
-        <View style={s.langIconBg}>
-          <Ionicons name="globe-outline" size={34} color={C.primaryDark} />
+      <HeroWrapper>
+        <StatusBarRow />
+        <View style={s.heroInner}>
+          <View style={s.iconRing}><GlobeIcon /></View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Text style={s.heroH1}>Select your </Text>
+            <Animated.Text style={[s.heroH1Em, { opacity: fadeAnim }]}>{LANG_WORDS[langIndex]}</Animated.Text>
+          </View>
+          <Text style={s.heroSub}>Choose the language you're most comfortable with</Text>
         </View>
-        <View style={s.langTitleRow}>
-          <Text style={s.langTitleStatic}>Select </Text>
-          <Animated.Text style={[s.langTitleAnimated, { opacity: fadeAnim }]}>
-            {LANG_WORDS[langIndex]}
-          </Animated.Text>
-        </View>
-        <Text style={s.langSubtitle}>Choose the language you're most comfortable with</Text>
-      </View>
+      </HeroWrapper>
 
-      <View style={s.searchWrap}>
+      <View style={s.searchLift}>
         <View style={s.searchBar}>
-          <Ionicons name="search" size={21} color={C.nd5} />
+          <SearchIcon />
           <TextInput
             style={s.searchInput}
             placeholder="Search language…"
-            placeholderTextColor={C.nd5}
+            placeholderTextColor={C.inkSoft}
             value={search}
             onChangeText={setSearch}
           />
+          <View style={s.searchArrow}><ArrowRightIcon /></View>
         </View>
       </View>
 
-      <ScrollView style={s.flex1} contentContainerStyle={s.langListContent}>
-        <Text style={s.listSectionHeader}>All Languages</Text>
-        {filtered.map(lang => (
-          <TouchableOpacity
-            key={lang.code}
-            style={[s.langRow, selectedLang?.code === lang.code ? s.langRowSelected : s.langRowOutline]}
-            onPress={() => onSelect(lang)}
-            activeOpacity={0.7}
-          >
-            <Text style={s.langFlag}>{lang.flag}</Text>
-            <View style={s.flex1}>
-              <Text style={[s.langRowName, selectedLang?.code === lang.code && s.langRowNameSelected]}>
-                {lang.name}
-              </Text>
-              <Text style={s.langRowNative}>{lang.native}</Text>
-            </View>
-            {selectedLang?.code === lang.code && (
-              <View style={s.checkCircle}>
-                <Ionicons name="checkmark" size={20} color={C.nl5} />
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={s.bodyFlex}>
+        <ScrollView
+          style={s.flex1}
+          contentContainerStyle={{ paddingHorizontal: 0, paddingTop: 4, paddingBottom: 20 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {filtered.map(lang => {
+            const sel = selectedLang?.code === lang.code;
+            return (
+              <TouchableOpacity
+                key={lang.code}
+                style={[s.langRow, sel && s.langRowSel]}
+                onPress={() => onSelect(lang)}
+                activeOpacity={0.7}
+              >
+                <Text style={s.langFlag}>{lang.flag}</Text>
+                <View style={s.flex1}>
+                  <Text style={s.langName}>{lang.name}</Text>
+                  <Text style={s.langNat}>{lang.native}</Text>
+                </View>
+                {sel && <View style={s.checkCircle}><CheckIcon /></View>}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-      {/* Continue footer — only appears once a language is tapped */}
-      {selectedLang && (
-        <View style={s.langFooter}>
-          {/* onSelect already navigated; this is a second confirm tap — intentional UX */}
-          <TouchableOpacity style={s.primaryButton} onPress={() => onSelect(selectedLang)}>
-            <Text style={s.primaryButtonText}>Continue</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        {selectedLang && (
+          <View style={s.langFooter}>
+            <TouchableOpacity style={s.btnBlue} onPress={() => onSelect(selectedLang)} activeOpacity={0.85}>
+              <Text style={s.btnBlueText}>Continue</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-      {/* Onboarding progress — always visible at the very bottom */}
-      <OnboardingProgressBar step={1} />
-    </SafeAreaView>
+        <OnboardingProgressBar step={1} />
+      </View>
+    </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCATION SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-type LocationScreenProps = { onBack: () => void; onAllow: () => void };
+type LocationScreenProps = { isSpanish: boolean; onBack: () => void; onAllow: () => void };
 
-function LocationScreen({ onBack, onAllow }: LocationScreenProps) {
+function LocationScreen({ isSpanish, onBack, onAllow }: LocationScreenProps) {
+  const t = getUIText(isSpanish);
   const [showModal, setShowModal] = useState(false);
-  const pulse0 = useRef(new Animated.Value(0)).current;
-  const pulse1 = useRef(new Animated.Value(0)).current;
-  const pulse2 = useRef(new Animated.Value(0)).current;
   const pinFloat = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    [pulse0, pulse1, pulse2].forEach((anim, i) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 600),
-          Animated.timing(anim, { toValue: 1, duration: 2200, useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
-        ])
-      ).start();
-    });
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pinFloat, { toValue: -9, duration: 1300, useNativeDriver: true }),
-        Animated.timing(pinFloat, { toValue: 0, duration: 1300, useNativeDriver: true }),
+        Animated.timing(pinFloat, { toValue: -7, duration: 1400, useNativeDriver: true }),
+        Animated.timing(pinFloat, { toValue: 0, duration: 1400, useNativeDriver: true }),
       ])
     ).start();
-  }, [pulse0, pulse1, pulse2, pinFloat]);
-
-  const RINGS = [
-    { anim: pulse0, size: 160 },
-    { anim: pulse1, size: 118 },
-    { anim: pulse2, size: 80 },
-  ];
+  }, [pinFloat]);
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" />
-      <View style={s.topBar}>
-        <TouchableOpacity style={s.backButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={26} color={C.nd1} />
-        </TouchableOpacity>
-      </View>
+    <View style={s.screen}>
+      <StatusBar barStyle="light-content" />
 
-      <View style={s.centeredScreen}>
-        <View style={s.pinIllus}>
-          {RINGS.map(({ anim, size }) => (
-            <Animated.View
-              key={size}
-              style={[s.pulseRing, {
-                width: size, height: size, borderRadius: size / 2,
-                opacity: anim,
-                transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1.15] }) }],
-              }]}
-            />
-          ))}
-          <Animated.View style={[s.pinWrap, { transform: [{ translateY: pinFloat }] }]}>
-            <View style={s.pinBase}>
-              <Ionicons name="location" size={40} color={C.primaryDark} />
-            </View>
+      <HeroWrapper>
+        <StatusBarRow />
+        <View style={s.navBar}>
+          <TouchableOpacity style={s.navBtn} onPress={onBack}><BackArrowWhite /></TouchableOpacity>
+          <View style={s.flex1} />
+          <View style={{ width: 30 }} />
+        </View>
+        <View style={s.heroInner}>
+          <Animated.View style={[s.locIllus, { transform: [{ translateY: pinFloat }] }]}>
+            <PinIcon />
           </Animated.View>
+          <Text style={[s.heroH1, { marginBottom: 4 }]}>{t.enableLocation}</Text>
+          <Text style={s.heroSub}>
+            {t.locationSub}
+          </Text>
         </View>
+      </HeroWrapper>
 
-        <Text style={s.title}>Enable Location</Text>
-        <Text style={s.subtitle}>
-          CareFind uses your location to find the nearest clinics and care providers in your area — you'll only see options close to you.
-        </Text>
-
-        <View style={s.trustCard}>
-          <View style={s.trustIcon}>
-            <Ionicons name="lock-closed-outline" size={24} color={C.primaryDark} />
+      <View style={s.bodyFlex}>
+        <ScrollView style={s.flex1} contentContainerStyle={s.bodyScroll} showsVerticalScrollIndicator={false}>
+          <View style={[s.card, { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 10 }]}>
+            <View style={s.iconRingSm}><LockIcon /></View>
+            <View style={s.flex1}>
+              <Text style={s.cardH2}>{t.privacyProtected}</Text>
+              <Text style={s.cardBody}>{t.privacyBody}</Text>
+            </View>
           </View>
-          <View style={s.flex1}>
-            <Text style={s.trustTitle}>Your privacy is protected</Text>
-            <Text style={s.trustBody}>Your location is only used to find nearby care. It is never stored or shared.</Text>
-          </View>
-        </View>
 
-        <TouchableOpacity style={[s.primaryButton, s.fullWidth]} onPress={onAllow}>
-          <Ionicons name="location-outline" size={24} color={C.nd1} style={s.btnIcon} />
-          <Text style={s.primaryButtonText}>Allow Location</Text>
-        </TouchableOpacity>
+          <View style={[s.card, { marginBottom: 12 }]}>
+            {[
+              { dot: C.blueMid, strong: t.nearbyClinicsOnly, rest: t.nearbyClinicsOnlyRest },
+              { dot: C.pinkMid, strong: t.oneTimeUse, rest: t.oneTimeUseRest },
+              { dot: C.blueMid, strong: t.noAccountRequired, rest: t.noAccountRequiredRest, last: true },
+            ].map(({ dot, strong, rest, last }, i) => (
+              <View key={i} style={[s.infoItem, last && { borderBottomWidth: 0 }]}>
+                <View style={[s.infoDot, { backgroundColor: dot }]} />
+                <Text style={s.infoText}><Text style={s.infoStrong}>{strong}</Text>{rest}</Text>
+              </View>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[s.btnBlue, { flexDirection: 'row', gap: 8, marginBottom: 8 }]}
+            onPress={onAllow}
+            activeOpacity={0.85}
+          >
+            <LocationPinBtnIcon />
+            <Text style={s.btnBlueText}>{t.allowLocation}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.btnGhost} activeOpacity={0.75}>
+            <Text style={s.btnGhostText}>{t.enterManually}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        <OnboardingProgressBar step={2} isSpanish={isSpanish} />
       </View>
 
-      {/* Location-denied modal — currently unreachable but kept for real OS integration */}
       <Modal visible={showModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.alertModal}>
-            <Ionicons name="location-outline" size={44} color={C.warnDark} style={s.modalIcon} />
-            <Text style={s.alertTitle}>Location Required</Text>
+            <Text style={s.alertTitle}>{t.locationRequired}</Text>
             <Text style={s.alertBody}>
-              Please allow location services for this app to function properly. Go to your device Settings and enable Location for CareFind.
+              {t.locationRequiredBody}
             </Text>
-            <TouchableOpacity style={[s.primaryButton, s.modalBtn]} onPress={() => setShowModal(false)}>
-              <Text style={s.primaryButtonText}>OK</Text>
+            <TouchableOpacity style={[s.btnBlue, { marginTop: 22, width: '100%' }]} onPress={() => setShowModal(false)}>
+              <Text style={s.btnBlueText}>{t.ok}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
-      {/* Onboarding progress */}
-      <OnboardingProgressBar step={2} />
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUERY SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-type QueryScreenProps = {
-  isSpanish: boolean;
-  onBack: () => void;
-  onSearch: (text: string) => void;
-};
+type QueryScreenProps = { isSpanish: boolean; onBack: () => void; onSearch: (text: string) => void };
 
 function QueryScreen({ isSpanish, onBack, onSearch }: QueryScreenProps) {
+  const t = getUIText(isSpanish);
   const [inputMode, setInputMode] = useState<'speak' | 'text'>('speak');
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [textInput, setTextInput] = useState('');
 
-  const sliderAnim = useRef(new Animated.Value(0)).current;
-  // Recording box height (0 = collapsed, 1 = open)
   const recordBoxAnim = useRef(new Animated.Value(0)).current;
-  // Transcript card (0 = hidden, 1 = visible)
   const transcriptAnim = useRef(new Animated.Value(0)).current;
-  // Text input box (0 = collapsed, 1 = open)
   const textBoxAnim = useRef(new Animated.Value(0)).current;
-
   const waveAnims = useRef(Array.from({ length: 6 }, () => new Animated.Value(0.15))).current;
   const waveLoops = useRef<Animated.CompositeAnimation[]>([]);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
-  const SLIDER_TRACK_WIDTH = SCREEN_WIDTH - 40;
-  const SLIDER_HALF = (SLIDER_TRACK_WIDTH - 8) / 2;
-
-  // ── Waveform ────────────────────────────────────────────────────────────────
   const startWave = useCallback(() => {
     waveLoops.current.forEach(l => l.stop());
     waveLoops.current = waveAnims.map((anim, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 70),
-          Animated.timing(anim, { toValue: 1, duration: 250 + i * 35, useNativeDriver: true }),
-          Animated.timing(anim, { toValue: 0.15, duration: 250 + i * 35, useNativeDriver: true }),
-        ])
-      )
+      Animated.loop(Animated.sequence([
+        Animated.delay(i * 70),
+        Animated.timing(anim, { toValue: 1, duration: 250 + i * 35, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.15, duration: 250 + i * 35, useNativeDriver: true }),
+      ]))
     );
     waveLoops.current.forEach(l => l.start());
   }, [waveAnims]);
@@ -460,516 +846,468 @@ function QueryScreen({ isSpanish, onBack, onSearch }: QueryScreenProps) {
     waveAnims.forEach(a => a.setValue(0.15));
   }, [waveAnims]);
 
-  // ── Audio permissions ────────────────────────────────────────────────────────
   useEffect(() => {
     Audio.requestPermissionsAsync().catch(() => { });
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-    }).catch(() => { });
-
-    return () => {
-      stopWave();
-      recordingRef.current?.stopAndUnloadAsync().catch(() => { });
-    };
+    Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true }).catch(() => { });
+    return () => { stopWave(); recordingRef.current?.stopAndUnloadAsync().catch(() => { }); };
   }, [stopWave]);
 
-  // ── Recording controls (ElevenLabs STT) ─────────────────────────────────────
   const handleStartSpeaking = useCallback(async () => {
-    // Reset transcript, collapse transcript card
     setTranscript('');
     Animated.timing(transcriptAnim, { toValue: 0, duration: 160, useNativeDriver: true }).start();
-    // Open the recording box
     setIsRecording(true);
     startWave();
     Animated.spring(recordBoxAnim, { toValue: 1, tension: 60, friction: 11, useNativeDriver: false }).start();
-
     try {
       const { granted } = await Audio.getPermissionsAsync();
       if (!granted) {
         const { granted: g2 } = await Audio.requestPermissionsAsync();
         if (!g2) throw new Error('Microphone permission denied');
       }
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       recordingRef.current = recording;
-    } catch (err) {
-      stopWave();
-      setIsRecording(false);
+    } catch {
+      stopWave(); setIsRecording(false);
       Animated.spring(recordBoxAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: false }).start();
     }
   }, [startWave, stopWave, recordBoxAnim, transcriptAnim]);
 
   const handleStopRecording = useCallback(async () => {
-    stopWave();
-    setIsRecording(false);
+    stopWave(); setIsRecording(false);
     Animated.spring(recordBoxAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: false }).start();
-
     try {
       const recording = recordingRef.current;
       if (!recording) return;
-
       await recording.stopAndUnloadAsync();
       recordingRef.current = null;
-
       const uri = recording.getURI();
-      if (!uri) {
-        Alert.alert('Recording error', 'No audio file was created from the recording.');
-        return;
-      }
-
-      if (!ELEVENLABS_API_KEY) {
-        Alert.alert('Missing API key', 'ELEVENLABS_API_KEY is not set.');
-        return;
-      }
-
+      if (!uri) { Alert.alert(t.recordingError, t.noAudioCreated); return; }
+      if (!ELEVENLABS_API_KEY) { Alert.alert(t.missingApiKey, t.missingElevenLabsKey); return; }
       const formData = new FormData();
-      formData.append('file', {
-        uri,
-        name: 'recording.m4a',
-        type: 'audio/m4a',
-      } as any);
+      formData.append('file', { uri, name: 'recording.m4a', type: 'audio/m4a' } as any);
       formData.append('model_id', 'scribe_v1');
-
-      const sttResponse = await fetch(ELEVENLABS_STT_URL, {
-        method: 'POST',
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY,
-        },
-        body: formData,
+      const res = await fetch(ELEVENLABS_STT_URL, {
+        method: 'POST', headers: { 'xi-api-key': ELEVENLABS_API_KEY }, body: formData,
       });
+      const raw = await res.text();
+      if (!res.ok) throw new Error(`STT failed: ${res.status} ${raw}`);
 
-      const raw = await sttResponse.text();
-      console.log('ElevenLabs STT status:', sttResponse.status);
-      console.log('ElevenLabs STT raw response:', raw);
+      const parsed = JSON.parse(raw);
+      const rawText = parsed?.text?.trim?.() ?? '';
 
-      if (!sttResponse.ok) {
-        throw new Error(`STT failed: ${sttResponse.status} ${raw}`);
-      }
+      const cleanedText = rawText
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/\[\s*[^\]]*\]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\s+([.,!?;:])/g, '$1')
+        .trim();
 
-      const data = JSON.parse(raw);
-      const text = data?.text?.trim?.() ?? '';
-
-      if (text) {
-        setTranscript(text);
-        Animated.spring(transcriptAnim, {
-          toValue: 1,
-          tension: 60,
-          friction: 12,
-          useNativeDriver: true,
-        }).start();
+      if (cleanedText) {
+        setTranscript(cleanedText);
+        Animated.spring(transcriptAnim, { toValue: 1, tension: 60, friction: 12, useNativeDriver: true }).start();
       } else {
-        Alert.alert('No speech detected', 'We could not transcribe any speech from that recording.');
+        Alert.alert(t.noSpeechDetected, t.noSpeechDetectedBody);
       }
-    } catch (err) {
-      console.error('STT error:', err);
-      Alert.alert('Transcription failed', 'We could not turn that recording into text.');
+    } catch (error) {
+      console.log('Transcription failed:', error);
+      Alert.alert(t.transcriptionFailed, t.transcriptionFailedBody);
     }
-  }, [stopWave, recordBoxAnim, transcriptAnim]);
+  }, [stopWave, recordBoxAnim, transcriptAnim, t]);
 
-  // ── Mode switching ──────────────────────────────────────────────────────────
   const switchMode = useCallback((mode: 'speak' | 'text') => {
     if (mode === inputMode) return;
-
-    Animated.spring(sliderAnim, {
-      toValue: mode === 'text' ? 1 : 0,
-      tension: 70, friction: 12, useNativeDriver: false,
-    }).start();
-
     if (mode === 'text') {
-      // Stop recording if active
       if (isRecording) {
-        stopWave();
-        setIsRecording(false);
-        try {
-          recordingRef.current?.stopAndUnloadAsync();
-          recordingRef.current = null;
-        } catch (_) { }
+        stopWave(); setIsRecording(false);
+        try { recordingRef.current?.stopAndUnloadAsync(); recordingRef.current = null; } catch (_) { }
       }
-      // Collapse recording box + transcript card, open text box
       Animated.spring(recordBoxAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: false }).start();
       Animated.timing(transcriptAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
       Animated.spring(textBoxAnim, { toValue: 1, tension: 60, friction: 11, useNativeDriver: false }).start();
     } else {
-      // Collapse text box
       Animated.spring(textBoxAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: false }).start();
       setTextInput('');
     }
     setInputMode(mode);
-  }, [inputMode, isRecording, sliderAnim, recordBoxAnim, transcriptAnim, textBoxAnim, stopWave]);
+  }, [inputMode, isRecording, recordBoxAnim, transcriptAnim, textBoxAnim, stopWave]);
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-  const sliderLeft = sliderAnim.interpolate({
-    inputRange: [0, 1], outputRange: [4, SLIDER_HALF + 4],
-  });
-
-  // Recording box: height 0 → 130
-  const recordBoxHeight = recordBoxAnim.interpolate({
-    inputRange: [0, 1], outputRange: [0, 130],
-  });
-  const recordBoxOpacity = recordBoxAnim.interpolate({
-    inputRange: [0, 0.5], outputRange: [0, 1], extrapolate: 'clamp',
-  });
-
-  // Transcript card: opacity + slide up
-  const transcriptCardOpacity = transcriptAnim;
-  const transcriptCardY = transcriptAnim.interpolate({
-    inputRange: [0, 1], outputRange: [10, 0],
-  });
-
-  // Text box: height 0 → 140
-  const textBoxHeight = textBoxAnim.interpolate({
-    inputRange: [0, 1], outputRange: [0, 140],
-  });
-  const textBoxOpacity = textBoxAnim.interpolate({
-    inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp',
-  });
+  const recordBoxHeight = recordBoxAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 130] });
+  const recordBoxOpacity = recordBoxAnim.interpolate({ inputRange: [0, 0.5], outputRange: [0, 1], extrapolate: 'clamp' });
+  const textBoxHeight = textBoxAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 120] });
+  const textBoxOpacity = textBoxAnim.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0, 1], extrapolate: 'clamp' });
+  const textBoxMT = textBoxAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 10] });
+  const trCardOpacity = transcriptAnim;
+  const trCardY = transcriptAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
 
   const activeQuery = inputMode === 'speak' ? transcript : textInput;
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" />
+    <View style={s.screen}>
+      <StatusBar barStyle="light-content" />
 
-      <View style={s.topBar}>
-        <TouchableOpacity style={s.backButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={26} color={C.nd1} />
-        </TouchableOpacity>
-        <View style={s.flex1} />
-        <TouchableOpacity style={s.signInPill} activeOpacity={0.8}>
-          <Ionicons name="person-outline" size={19} color={C.primaryDark} />
-          <Text style={s.signInText}>Sign In</Text>
-        </TouchableOpacity>
-      </View>
+      <HeroWrapper>
+        <StatusBarRow />
+        <View style={s.navBar}>
+          <TouchableOpacity style={s.navBtn} onPress={onBack}><BackArrowWhite /></TouchableOpacity>
+          <View style={s.flex1} />
+          <TouchableOpacity style={s.signInPill} activeOpacity={0.8}>
+            <PersonIcon />
+            <Text style={s.signInText}>{t.signIn}</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={s.heroInner}>
+          <View style={s.iconRing}><StethoscopeIcon /></View>
+          <Text style={[s.heroH1, { marginBottom: 4 }]}>{t.howCanWeHelp}</Text>
+          <Text style={s.heroSub}>
+            {t.querySub}
+          </Text>
+        </View>
+      </HeroWrapper>
 
       <KeyboardAvoidingView style={s.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={s.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Hero */}
-          <View style={s.heroCenter}>
-            <View style={s.queryIconRing}>
-              <Ionicons name="location" size={50} color={C.primaryDark} />
-            </View>
-            <Text style={s.title}>How can we help?</Text>
-            <Text style={s.subtitle}>
-              {isSpanish
-                ? 'Describe tus síntomas o el tipo de atención que necesitas'
-                : 'Describe your symptoms or what kind of care you need'}
-            </Text>
-          </View>
+        <ScrollView contentContainerStyle={s.bodyScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-          {/* Speak / Text slider */}
-          <View style={[s.modeSlider, { width: SLIDER_TRACK_WIDTH }]}>
-            <Animated.View style={[s.modeSliderActive, { left: sliderLeft, width: SLIDER_HALF }]} />
-            <TouchableOpacity style={s.modeSliderOption} onPress={() => switchMode('speak')} activeOpacity={0.75}>
-              <Ionicons name="mic-outline" size={24} color={inputMode === 'speak' ? C.nd1 : C.nd4} />
-              <Text style={[s.modeSliderText, inputMode === 'speak' && s.modeSliderTextActive]}>Speak</Text>
+          <View style={s.modeSlider}>
+            <TouchableOpacity style={[s.modeOpt, inputMode === 'speak' && s.modeOptOn]} onPress={() => switchMode('speak')} activeOpacity={0.75}>
+              <MicSmIcon color={inputMode === 'speak' ? C.white : C.inkSoft} />
+              <Text style={[s.modeOptTxt, inputMode === 'speak' && s.modeOptTxtOn]}>{t.speak}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.modeSliderOption} onPress={() => switchMode('text')} activeOpacity={0.75}>
-              <Ionicons name="create-outline" size={24} color={inputMode === 'text' ? C.nd1 : C.nd4} />
-              <Text style={[s.modeSliderText, inputMode === 'text' && s.modeSliderTextActive]}>Text</Text>
+            <TouchableOpacity style={[s.modeOpt, inputMode === 'text' && s.modeOptOn]} onPress={() => switchMode('text')} activeOpacity={0.75}>
+              <TextLinesIcon />
+              <Text style={[s.modeOptTxt, inputMode === 'text' && s.modeOptTxtOn]}>{t.text}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* ── SPEAK MODE ELEMENTS (always rendered, shown/hidden via opacity+pointer) ── */}
-
-          {/* Start Speaking button — visible when not recording */}
-          {!isRecording && inputMode === 'speak' && (
-            <TouchableOpacity style={s.startSpeakingBtn} onPress={handleStartSpeaking} activeOpacity={0.8}>
-              <Ionicons name="mic" size={28} color={C.nd1} />
-              <Text style={s.startSpeakingText}>
-                {transcript ? 'Record Again' : 'Start Speaking'}
-              </Text>
+          {inputMode === 'speak' && !isRecording && (
+            <TouchableOpacity style={s.speakBtn} onPress={handleStartSpeaking} activeOpacity={0.85}>
+              <MicLgIcon />
+              <Text style={s.speakBtnText}>{transcript ? t.recordAgain : t.startSpeaking}</Text>
             </TouchableOpacity>
           )}
 
-          {/* Recording box — always in DOM, height animated so it can spring open/closed
-              without unmounting. Overflow hidden clips it when height=0. */}
           <Animated.View
-            style={[s.recordingBox, {
-              height: recordBoxHeight,
-              opacity: recordBoxOpacity,
-              // Hide border visually when fully collapsed
-              borderWidth: isRecording ? 1.5 : 0,
-            }]}
+            style={[s.recordingBox, { height: recordBoxHeight, opacity: recordBoxOpacity, borderWidth: isRecording ? 1.5 : 0 }]}
             pointerEvents={isRecording ? 'auto' : 'none'}
           >
-            {/* Waveform — left side */}
-            <View style={s.waveformContainer}>
+            <View style={s.waveWrap}>
               {waveAnims.map((anim, i) => (
                 <Animated.View
                   key={i}
-                  style={[s.waveBar, {
-                    transform: [{ scaleY: anim }],
-                    backgroundColor: i % 2 === 0 ? C.primary : C.primaryMid,
-                  }]}
+                  style={[s.waveBar, { transform: [{ scaleY: anim }], backgroundColor: i % 2 === 0 ? C.blueMid : C.blueHero }]}
                 />
               ))}
             </View>
-
-            {/* Listening label — center */}
-            <Text style={s.listeningLabel}>Listening…</Text>
-
-            {/* Red stop button — top-right corner of the box */}
-            <TouchableOpacity style={s.stopBtnInBox} onPress={handleStopRecording} activeOpacity={0.8}>
-              <Ionicons name="stop-circle" size={30} color={C.nl5} />
+            <Text style={s.listeningLbl}>{t.listening}</Text>
+            <TouchableOpacity style={s.stopBtn} onPress={handleStopRecording} activeOpacity={0.8}>
+              <View style={s.stopDot} />
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Transcript card — only render in speak mode when transcript exists */}
           {inputMode === 'speak' && !!transcript && (
-            <Animated.View
-              style={[s.transcriptCard, {
-                opacity: transcriptCardOpacity,
-                transform: [{ translateY: transcriptCardY }],
-              }]}
-            >
-              <View style={s.transcriptCardHeader}>
-                <Ionicons name="mic" size={15} color={C.primaryDark} />
-                <Text style={s.transcriptCardLabel}>Transcribed</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setTranscript('');
-                    Animated.timing(transcriptAnim, { toValue: 0, duration: 160, useNativeDriver: true }).start();
-                  }}
-                >
-                  <Ionicons name="close-circle" size={19} color={C.nd5} />
+            <Animated.View style={[s.trCard, { opacity: trCardOpacity, transform: [{ translateY: trCardY }] }]}>
+              <View style={s.trCardHead}>
+                <Text style={s.trCardLbl}>{t.transcribed}</Text>
+                <TouchableOpacity onPress={() => {
+                  setTranscript('');
+                  Animated.timing(transcriptAnim, { toValue: 0, duration: 160, useNativeDriver: true }).start();
+                }}>
+                  <Text style={s.trClear}>✕</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={s.transcriptCardText}>{transcript}</Text>
+              <Text style={s.trCardTxt}>{transcript}</Text>
             </Animated.View>
           )}
 
-          {/* ── TEXT MODE INPUT BOX — always rendered, height animated ── */}
           <Animated.View
-            style={[s.queryInputAnimated, {
-              height: textBoxHeight,
-              opacity: textBoxOpacity,
-              borderWidth: 1.5,
-              overflow: 'hidden',
-            }]}
+            style={[s.textBox, { height: textBoxHeight, opacity: textBoxOpacity, marginTop: textBoxMT, borderWidth: 1.5, overflow: 'hidden' }]}
             pointerEvents={inputMode === 'text' ? 'auto' : 'none'}
           >
-            <View style={s.transcriptBox}>
-              <ScrollView
-                style={s.transcriptScroll}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
-                <TextInput
-                  style={s.transcriptInput}
-                  placeholder="Start typing…"
-                  placeholderTextColor={C.nd5}
-                  multiline
-                  value={textInput}
-                  onChangeText={setTextInput}
-                  autoFocus={inputMode === 'text'}
-                />
-              </ScrollView>
-              <TouchableOpacity style={s.stopSendBtn} onPress={() => onSearch(textInput)} activeOpacity={0.8}>
-                <Ionicons name="send" size={26} color={C.primaryDark} />
-              </TouchableOpacity>
-            </View>
+            <TextInput
+              style={s.textBoxInput}
+              placeholder={t.typeSymptoms}
+              placeholderTextColor={C.inkSoft}
+              multiline
+              value={textInput}
+              onChangeText={setTextInput}
+              autoFocus={inputMode === 'text'}
+            />
           </Animated.View>
 
-          <View style={s.spacer} />
-
-          <TouchableOpacity style={s.primaryButton} onPress={() => onSearch(activeQuery)}>
-            <Ionicons name="search" size={22} color={C.nd1} style={s.btnIcon} />
-            <Text style={s.primaryButtonText}>Find Care Near Me</Text>
+          <TouchableOpacity
+            style={[s.btnPink, { flexDirection: 'row', gap: 8, marginTop: 11, marginBottom: 11 }]}
+            onPress={() => onSearch(activeQuery)}
+            activeOpacity={0.85}
+          >
+            <SearchIcon color="white" />
+            <Text style={s.btnPinkText}>{t.findCareNearMe}</Text>
           </TouchableOpacity>
 
-          <View style={[s.queryDisclaimer, s.disclaimerTop]}>
-            <Ionicons name="warning-outline" size={20} color={C.warnDark} />
-            <Text style={s.queryDisclaimerText}>For emergencies, always call 911 immediately.</Text>
+          <View style={s.disclaimer}>
+            <InfoIcon />
+            <Text style={s.disclaimerTxt}>{t.emergencyDisclaimer}</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEARCHING SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-function SearchingScreen() {
-  const spinAnim = useRef(new Animated.Value(0)).current;
-
+function SearchingScreen({ isSpanish }: { isSpanish: boolean }) {
+  const t = getUIText(isSpanish);
+  const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
-      Animated.timing(spinAnim, { toValue: 1, duration: 900, useNativeDriver: true })
-    ).start();
-  }, [spinAnim]);
-
-  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+    Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: true })).start();
+  }, [spin]);
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={[s.flex1, { backgroundColor: C.offWhite, alignItems: 'center', justifyContent: 'center' }]}>
       <StatusBar barStyle="dark-content" />
-      <View style={s.centeredScreen}>
-        <Animated.View style={[s.spinnerRing, { transform: [{ rotate: spin }] }]} />
-        <Text style={s.loadingTitle}>Finding nearby providers</Text>
-        <Text style={s.loadingSubtitle}>This usually takes a few seconds</Text>
-      </View>
+      <Animated.View style={[s.spinner, { transform: [{ rotate }] }]} />
+      <Text style={s.loadTitle}>{t.findingProviders}</Text>
+      <Text style={s.loadSub}>{t.takesFewSeconds}</Text>
     </SafeAreaView>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LOADING SCREEN (skeleton shimmer)
+// LOADING SCREEN (skeleton)
 // ─────────────────────────────────────────────────────────────────────────────
-type LoadingScreenProps = { spokenText: string; onBack: () => void };
+type LoadingScreenProps = { spokenText: string; isSpanish: boolean; onBack: () => void };
 
-function LoadingScreen({ spokenText, onBack }: LoadingScreenProps) {
-  const pulseAnim = useRef(new Animated.Value(0.35)).current;
-
+function LoadingScreen({ spokenText, isSpanish, onBack }: LoadingScreenProps) {
+  const t = getUIText(isSpanish);
+  const pulse = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 750, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.35, duration: 750, useNativeDriver: true }),
-      ])
-    ).start();
-  }, [pulseAnim]);
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 1, duration: 750, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0.35, duration: 750, useNativeDriver: true }),
+    ])).start();
+  }, [pulse]);
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={[s.flex1, { backgroundColor: C.offWhite }]}>
       <StatusBar barStyle="dark-content" />
-      <View style={s.topBar}>
-        <TouchableOpacity style={s.backButton} onPress={onBack}>
-          <Ionicons name="arrow-back" size={26} color={C.nd1} />
-        </TouchableOpacity>
-        <Text style={s.navTitle}>Nearby Results</Text>
-        <View style={s.navSpacer} />
+      <View style={s.loadTopBar}>
+        <TouchableOpacity style={s.loadBackBtn} onPress={onBack}><BackArrowDark /></TouchableOpacity>
+        <Text style={s.loadNavTitle}>{t.nearbyResults}</Text>
+        <View style={{ width: 30 }} />
       </View>
-
-      <View style={s.queryPillWrap}>
-        <View style={s.queryPill}>
-          <Ionicons name="search" size={18} color={C.nd4} />
-          <Text style={s.queryPillText} numberOfLines={1}>{spokenText}</Text>
+      <View style={s.qPillWrap}>
+        <View style={s.qPill}>
+          <SearchIcon />
+          <Text style={s.qPillText} numberOfLines={1}>{spokenText}</Text>
         </View>
       </View>
-
-      <Animated.View style={[s.skeletonWrap, { opacity: pulseAnim }]}>
-        {/* Card 1 — full skeleton */}
-        <View style={s.skeletonCard}>
-          <View style={s.skeletonRow}>
-            <View style={s.skeletonCircle} />
-            <View style={s.flex1}>
-              <View style={[s.skeletonLine, { width: '72%' }]} />
-              <View style={[s.skeletonLine, { width: '44%' }]} />
+      <Animated.View style={[{ flex: 1, padding: 16, gap: 14 }, { opacity: pulse }]}>
+        {[['72%', '44%'], ['88%', '55%'], ['58%']].map((widths, ci) => (
+          <View key={ci} style={s.skelCard}>
+            <View style={s.skelRow}>
+              <View style={s.skelCircle} />
+              <View style={s.flex1}>
+                {widths.map((w, li) => <View key={li} style={[s.skelLine, { width: w as any }]} />)}
+              </View>
             </View>
+            {ci === 0 && (
+              <>
+                <View style={s.skelBlock} />
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <View style={[s.skelLine, { flex: 1, height: 36, borderRadius: 10 }]} />
+                  <View style={[s.skelLine, { flex: 1, height: 36, borderRadius: 10 }]} />
+                  <View style={[s.skelLine, { width: 36, height: 36, borderRadius: 10 }]} />
+                </View>
+              </>
+            )}
+            {ci === 1 && <View style={s.skelBlock} />}
           </View>
-          <View style={s.skeletonBlock} />
-          <View style={s.skeletonBtnRow}>
-            <View style={[s.skeletonLine, s.skeletonBtn]} />
-            <View style={[s.skeletonLine, s.skeletonBtn]} />
-            <View style={[s.skeletonLine, s.skeletonBtnSm]} />
-          </View>
-        </View>
-        {/* Card 2 — partial */}
-        <View style={s.skeletonCard}>
-          <View style={s.skeletonRow}>
-            <View style={s.skeletonCircle} />
-            <View style={s.flex1}>
-              <View style={[s.skeletonLine, { width: '88%' }]} />
-              <View style={[s.skeletonLine, { width: '55%' }]} />
-            </View>
-          </View>
-          <View style={s.skeletonBlock} />
-        </View>
-        {/* Card 3 — minimal */}
-        <View style={s.skeletonCard}>
-          <View style={s.skeletonRow}>
-            <View style={s.skeletonCircle} />
-            <View style={s.flex1}>
-              <View style={[s.skeletonLine, { width: '58%' }]} />
-            </View>
-          </View>
-        </View>
+        ))}
       </Animated.View>
     </SafeAreaView>
   );
 }
 
+async function createAndPlayClinicSpeech(
+  clinic: Clinic,
+  summaryText: string,
+  isSpanish: boolean,
+  setLoadingClinicId: (id: string | null) => void,
+  currentSoundRef: React.MutableRefObject<Audio.Sound | null>,
+) {
+  const t = getUIText(isSpanish);
+
+  try {
+    if (!ELEVENLABS_API_KEY) {
+      Alert.alert(t.missingApiKey, 'EXPO_PUBLIC_ELEVENLABS_API_KEY is not set.');
+      return;
+    }
+
+    setLoadingClinicId(clinic.id);
+
+    if (currentSoundRef.current) {
+      await currentSoundRef.current.unloadAsync().catch(() => { });
+      currentSoundRef.current = null;
+    }
+
+    const speechText = summaryText?.trim();
+
+    if (!speechText) {
+      Alert.alert(t.noOverviewAvailable, t.noOverviewAvailableBody);
+      return;
+    }
+
+    const response = await fetch(`${ELEVENLABS_TTS_URL}/JBFqnCBsd6RMkjVDRZzb`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg',
+      },
+      body: JSON.stringify({
+        text: speechText,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.45,
+          similarity_boost: 0.8,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`TTS failed: ${response.status} ${errorText}`);
+    }
+
+    const audioBlob = await response.blob();
+    const reader = new FileReader();
+
+    const base64Audio: string = await new Promise((resolve, reject) => {
+      reader.onerror = reject;
+      reader.onloadend = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        const base64 = result.split(',')[1] ?? '';
+        resolve(base64);
+      };
+      reader.readAsDataURL(audioBlob);
+    });
+
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+    });
+
+    const sound = new Audio.Sound();
+
+    await sound.loadAsync(
+      { uri: `data:audio/mpeg;base64,${base64Audio}` },
+      {
+        shouldPlay: true,
+        volume: 1.0,
+        rate: 1.0,
+        shouldCorrectPitch: true,
+      }
+    );
+
+    await sound.setVolumeAsync(1.0);
+    currentSoundRef.current = sound;
+
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if ('didJustFinish' in status && status.didJustFinish) {
+        sound.unloadAsync().catch(() => { });
+        if (currentSoundRef.current === sound) currentSoundRef.current = null;
+      }
+    });
+  } catch (error) {
+    console.log('TTS error:', error);
+    Alert.alert(t.audioError, t.audioErrorBody);
+  } finally {
+    setLoadingClinicId(null);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RESULTS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
-type ResultsScreenProps = {
-  clinics: Clinic[];
-  spokenText: string;
-  onBack: () => void;
-  onEditQuery: () => void;
-};
+type ResultsScreenProps = { clinics: Clinic[]; spokenText: string; onBack: () => void; onEditQuery: () => void; selectedLang: Language | null; reply: string };
 
-function ResultsScreen({ clinics, spokenText, onBack, onEditQuery }: ResultsScreenProps) {
-  // Sheet position constants — defined once outside the pan-responder closures
-  // so they can't go stale if the component re-renders.
+function ResultsScreen({ clinics, spokenText, onBack, onEditQuery, selectedLang, reply }: ResultsScreenProps) {
   const SHEET_PEEK = SCREEN_HEIGHT * 0.60;
   const SHEET_OPEN = SCREEN_HEIGHT * 0.08;
+  const isSpanish = selectedLang?.code === 'es';
+  const t = getUIText(isSpanish);
 
   const sheetY = useRef(new Animated.Value(SHEET_PEEK)).current;
   const sheetOffset = useRef(SHEET_PEEK);
 
   const [expandedClinic, setExpandedClinic] = useState<Clinic | null>(null);
+  const [loadingSpeechClinicId, setLoadingSpeechClinicId] = useState<string | null>(null);
+  const [overviewTtsLoading, setOverviewTtsLoading] = useState(false);
   const expandedSheetY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const ttsSoundRef = useRef<Audio.Sound | null>(null);
 
-  // Stable ref-based open/close so PanResponder closures always see latest version
-  const openExpandedCard = useCallback((clinic: Clinic) => {
+  const getSummary = useCallback(
+    (clinic: Clinic) => (isSpanish ? clinic.spanishSummary : clinic.englishSummary),
+    [isSpanish]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (ttsSoundRef.current) {
+        ttsSoundRef.current.unloadAsync().catch(() => { });
+        ttsSoundRef.current = null;
+      }
+    };
+  }, []);
+
+  const openExpanded = useCallback((clinic: Clinic) => {
     setExpandedClinic(clinic);
     expandedSheetY.setValue(SCREEN_HEIGHT);
     Animated.spring(expandedSheetY, { toValue: 0, tension: 65, friction: 12, useNativeDriver: true }).start();
   }, [expandedSheetY]);
 
-  const closeExpandedCard = useCallback(() => {
-    Animated.timing(expandedSheetY, {
-      toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true,
-    }).start(() => setExpandedClinic(null));
+  const closeExpanded = useCallback(() => {
+    Animated.timing(expandedSheetY, { toValue: SCREEN_HEIGHT, duration: 280, useNativeDriver: true })
+      .start(() => setExpandedClinic(null));
   }, [expandedSheetY]);
 
-  // Keep close function in a ref so PanResponder can call the latest version
-  const closeExpandedCardRef = useRef(closeExpandedCard);
-  useEffect(() => { closeExpandedCardRef.current = closeExpandedCard; }, [closeExpandedCard]);
+  const closeRef = useRef(closeExpanded);
+  useEffect(() => { closeRef.current = closeExpanded; }, [closeExpanded]);
 
-  const sheetPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, { dy }) => Math.abs(dy) > 4,
-      onPanResponderGrant: () => {
-        sheetY.stopAnimation(val => { sheetOffset.current = val; });
-      },
-      onPanResponderMove: (_, { dy }) => {
-        const next = sheetOffset.current + dy;
-        if (next >= SHEET_OPEN - 20 && next <= SHEET_PEEK + 60) sheetY.setValue(next);
-      },
-      onPanResponderRelease: (_, { dy, vy }) => {
-        const target = (dy < -60 || vy < -0.6) ? SHEET_OPEN : SHEET_PEEK;
-        sheetOffset.current = target;
-        Animated.spring(sheetY, { toValue: target, tension: 60, friction: 10, useNativeDriver: false }).start();
-      },
-    })
-  ).current;
+  const sheetPan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, { dy }) => Math.abs(dy) > 4,
+    onPanResponderGrant: () => { sheetY.stopAnimation(val => { sheetOffset.current = val; }); },
+    onPanResponderMove: (_, { dy }) => {
+      const next = sheetOffset.current + dy;
+      if (next >= SHEET_OPEN - 20 && next <= SHEET_PEEK + 60) sheetY.setValue(next);
+    },
+    onPanResponderRelease: (_, { dy, vy }) => {
+      const target = (dy < -60 || vy < -0.6) ? SHEET_OPEN : SHEET_PEEK;
+      sheetOffset.current = target;
+      Animated.spring(sheetY, { toValue: target, tension: 60, friction: 10, useNativeDriver: false }).start();
+    },
+  })).current;
 
-  const expandedPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, { dy }) => dy > 6,
-      onPanResponderMove: (_, { dy }) => {
-        if (dy > 0) expandedSheetY.setValue(dy);
-      },
-      onPanResponderRelease: (_, { dy, vy }) => {
-        if (dy > 110 || vy > 0.9) {
-          closeExpandedCardRef.current();
-        } else {
-          Animated.spring(expandedSheetY, { toValue: 0, tension: 65, friction: 12, useNativeDriver: true }).start();
-        }
-      },
-    })
-  ).current;
+  const expandedPan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, { dy }) => dy > 6,
+    onPanResponderMove: (_, { dy }) => { if (dy > 0) expandedSheetY.setValue(dy); },
+    onPanResponderRelease: (_, { dy, vy }) => {
+      if (dy > 110 || vy > 0.9) closeRef.current();
+      else Animated.spring(expandedSheetY, { toValue: 0, tension: 65, friction: 12, useNativeDriver: true }).start();
+    },
+  })).current;
+
+  const ClinicIconFor = ({ clinic }: { clinic: Clinic }) => {
+    if (clinic.lowCost) return <View style={s.iconRingPk}><PersonCardIcon /></View>;
+    if (clinic.matchScore >= 0.7) return <View style={s.iconRingSm}><StarIcon /></View>;
+    return <View style={s.iconRingSm}><HospitalIcon /></View>;
+  };
 
   return (
     <View style={s.mapRoot}>
@@ -977,146 +1315,174 @@ function ResultsScreen({ clinics, spokenText, onBack, onEditQuery }: ResultsScre
 
       <MapView
         style={StyleSheet.absoluteFillObject}
-        initialRegion={{ latitude: 29.652, longitude: -82.372, latitudeDelta: 0.08, longitudeDelta: 0.06 }}
+        initialRegion={{
+          latitude: clinics[0]?.lat ?? 29.652,
+          longitude: clinics[0]?.lng ?? -82.372,
+          latitudeDelta: 0.08,
+          longitudeDelta: 0.06,
+        }}
       >
         {clinics.map(clinic => (
           <Marker
             key={clinic.id}
             coordinate={{ latitude: clinic.lat, longitude: clinic.lng }}
             title={clinic.name}
-            onPress={() => openExpandedCard(clinic)}
+            description={clinic.address}
+            onPress={() => openExpanded(clinic)}
           />
         ))}
       </MapView>
 
       <SafeAreaView pointerEvents="box-none" style={StyleSheet.absoluteFillObject}>
-        <TouchableOpacity style={s.floatingBack} onPress={onBack}>
-          <Ionicons name="arrow-back" size={26} color={C.nd1} />
-        </TouchableOpacity>
+        <TouchableOpacity style={s.floatBack} onPress={onBack}><BackArrowDark /></TouchableOpacity>
       </SafeAreaView>
 
-      {/* Bottom results sheet */}
       <Animated.View style={[s.bottomSheet, { transform: [{ translateY: sheetY }] }]}>
         <View style={s.sheetHandleArea} {...sheetPan.panHandlers}>
-          <Ionicons name="chevron-up" size={32} color={C.nl1} />
+          <View style={s.sheetHandle} />
         </View>
 
-        <View style={s.queryPillWrap}>
-          <View style={s.queryPill}>
-            <Ionicons name="search" size={18} color={C.nd4} />
-            <Text style={s.queryPillText} numberOfLines={1}>{spokenText}</Text>
-            <TouchableOpacity onPress={onEditQuery}>
-              <Text style={s.queryPillEdit}>Edit</Text>
-            </TouchableOpacity>
+        <View style={s.qPillWrap}>
+          <View style={s.qPill}>
+            <MapQIcon />
+            <Text style={s.qPillText} numberOfLines={1}>"{spokenText}"</Text>
           </View>
         </View>
 
-        <ScrollView style={s.flex1} contentContainerStyle={s.sheetScrollContent} showsVerticalScrollIndicator={false}>
-          <View style={s.aiOverviewBox}>
-            <View style={s.aiOverviewHeader}>
-              <Ionicons name="sparkles" size={18} color={C.primaryDark} />
-              <Text style={s.aiOverviewLabel}>AI Overview</Text>
+        <ScrollView style={s.flex1} contentContainerStyle={s.sheetScroll} showsVerticalScrollIndicator={false}>
+          <View style={s.aiBox}>
+            <View style={s.aiHead}>
+              <SparkleIcon />
+              <Text style={s.aiLbl}>{t.response}</Text>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity
+                style={s.aiTtsBtn}
+                onPress={() => {
+                  const fakeClinic = { id: '__overview__' } as Clinic;
+                  setOverviewTtsLoading(true);
+                  createAndPlayClinicSpeech(fakeClinic, reply, isSpanish, (id) => {
+                    setOverviewTtsLoading(false);
+                  }, ttsSoundRef);
+                }}
+                activeOpacity={0.8}
+              >
+                <SpeakerIcon color={C.blueDeep} />
+                <Text style={s.ttsBtnTxt}>{overviewTtsLoading ? t.loading : t.read}</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={s.aiOverviewText}>
-              Based on your symptoms,{' '}
-              <Text style={s.bold}>{clinics.length} nearby providers</Text> were found.
-              Gainesville Urgent Care is the closest and most affordable, open now with walk-in availability.
-              UF Health offers same-day appointments and academic-grade care. Meridian is currently closed but reopens at 8am.
+            <Text style={s.aiTxt}>{reply}</Text>
+          </View>
+
+          <View style={s.resMeta}>
+            <Text style={s.resCount}>
+              {t.clinicsFound(clinics.length)}
             </Text>
+            <Text style={s.resHint}>{t.tapToExpand}</Text>
           </View>
 
-          <View style={s.resultsCountRow}>
-            <Text style={s.resultsCount}>{clinics.length} results nearby</Text>
-            <Text style={s.resultsHint}>Tap a card to expand</Text>
-          </View>
-
-          {clinics.map(clinic => (
+          {!expandedClinic && clinics.map((clinic, idx) => (
             <TouchableOpacity
               key={clinic.id}
-              style={s.collapsedCard}
-              onPress={() => openExpandedCard(clinic)}
+              style={[s.clinicCard, idx === 0 && s.clinicCardTop]}
+              onPress={() => openExpanded(clinic)}
               activeOpacity={0.75}
             >
-              <View style={s.flex1}>
-                <Text style={s.cardName}>{clinic.name}</Text>
-                <ClinicBadges clinic={clinic} />
+              <View style={s.ccHead}>
+                <ClinicIconFor clinic={clinic} />
+                <View style={s.flex1}>
+                  <Text style={s.ccName}>{clinic.name}</Text>
+                  <Text style={s.ccAddr}>{clinic.address}</Text>
+                </View>
               </View>
-              <Ionicons name="chevron-up" size={22} color={C.nd5} />
+              <ClinicBadges clinic={clinic} isSpanish={isSpanish} />
+              <View style={s.ccSummary}>
+                <View style={s.ccSummaryRow}>
+                  <Text style={[s.ccSummaryTxt, { flex: 1 }]}>{getSummary(clinic)}</Text>
+                  <TouchableOpacity
+                    style={s.ccSummaryTtsBtn}
+                    onPress={(e) => { e.stopPropagation(); createAndPlayClinicSpeech(clinic, getSummary(clinic), isSpanish, setLoadingSpeechClinicId, ttsSoundRef); }}
+                    activeOpacity={0.75}
+                  >
+                    <SpeakerIcon color={loadingSpeechClinicId === clinic.id ? C.pinkMid : C.blueDeep} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={s.ccActs}>
+                <TouchableOpacity style={[s.ccBtn, s.ccBtnPri]}>
+                  <PhoneIcon /><Text style={s.ccBtnPriTxt}>{t.call}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.ccBtn, s.ccBtnSec]}>
+                  <Text style={s.ccBtnSecTxt}>{t.directions}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.ccBtn, s.ccBtnSec, s.ccBtnIco]} onPress={() => Clipboard.setStringAsync(clinic.address)}>
+                  <CopyIcon />
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           ))}
 
-          <View style={s.disclaimer}>
-            <Ionicons name="warning-outline" size={19} color={C.warnDark} style={s.disclaimerIcon} />
-            <Text style={s.disclaimerText}>
-              AI suggestions are not a replacement for professional healthcare advice.
-            </Text>
-          </View>
+          {clinics.length === 0 && (
+            <View style={s.card}>
+              <Text style={s.cardH2}>{t.noResults}</Text>
+              <Text style={s.cardBody}>
+                {t.noResultsBody}
+              </Text>
+            </View>
+          )}
         </ScrollView>
       </Animated.View>
 
-      {/* Expanded clinic card sheet.
-          Close button is a sibling — NOT nested inside the pan-handler strip —
-          so its onPress is never consumed by PanResponder. */}
       {expandedClinic && (
         <Animated.View style={[s.expandedSheet, { transform: [{ translateY: expandedSheetY }] }]}>
-          <View style={s.expandedDragStrip} {...expandedPan.panHandlers}>
-            <Ionicons name="chevron-down" size={32} color={C.nl1} />
+          <View style={s.expandedDrag} {...expandedPan.panHandlers}>
+            <View style={s.sheetHandle} />
           </View>
-
-          <TouchableOpacity style={s.closeBtn} onPress={closeExpandedCard}>
-            <Ionicons name="close" size={20} color={C.nd3} />
+          <TouchableOpacity style={s.closeBtn} onPress={closeExpanded}>
+            <Text style={s.closeTxt}>✕</Text>
           </TouchableOpacity>
-
-          <ScrollView contentContainerStyle={s.expandedScrollContent} showsVerticalScrollIndicator={false}>
-            <Text style={[s.cardName, s.expandedCardName]}>{expandedClinic.name}</Text>
-            <ClinicBadges clinic={expandedClinic} />
-
+          <ScrollView contentContainerStyle={s.expandedScroll} showsVerticalScrollIndicator={false}>
+            <Text style={s.expandedName}>{expandedClinic.name}</Text>
+            <ClinicBadges clinic={expandedClinic} isSpanish={isSpanish} />
             <View style={s.divider} />
-
-            <View style={s.aiSummaryBox}>
-              <View style={s.aiOverviewHeader}>
-                <Ionicons name="sparkles" size={16} color={C.primaryDark} />
-                <Text style={s.aiOverviewLabel}>AI Overview</Text>
+            <View style={s.aiBox}>
+              <View style={s.aiHead}>
+                <SparkleIcon />
+                <Text style={s.aiLbl}>{t.summary}</Text>
+                <View style={{ flex: 1 }} />
+                <TouchableOpacity
+                  style={s.aiTtsBtn}
+                  onPress={() => createAndPlayClinicSpeech(expandedClinic, getSummary(expandedClinic), isSpanish, setLoadingSpeechClinicId, ttsSoundRef)}
+                  activeOpacity={0.8}
+                >
+                  <SpeakerIcon color={C.blueDeep} />
+                  <Text style={s.ttsBtnTxt}>{loadingSpeechClinicId === expandedClinic.id ? t.loading : t.read}</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={s.aiOverviewText}>{expandedClinic.aiSummary}</Text>
+              <Text style={s.aiTxt}>{getSummary(expandedClinic)}</Text>
             </View>
-
             <View style={s.divider} />
-
             <View style={s.detailList}>
-              <View style={s.detailRow}>
-                <Ionicons name="location-outline" size={21} color={C.nd4} />
-                <Text style={s.detailText}>{expandedClinic.address}</Text>
-              </View>
-              <View style={s.detailRow}>
-                <Ionicons name="time-outline" size={21} color={C.nd4} />
-                <Text style={s.detailText}>
-                  <Text style={s.detailLabel}>Hours: </Text>
-                  {expandedClinic.hours}
-                </Text>
-              </View>
-              <View style={s.detailRow}>
-                <Ionicons name="call-outline" size={21} color={C.nd4} />
-                <Text style={s.detailText}>{expandedClinic.phone}</Text>
-              </View>
+              {[
+                { label: t.address, value: expandedClinic.address },
+                { label: t.hours, value: expandedClinic.hours },
+                { label: t.phone, value: expandedClinic.phone },
+              ].map(({ label, value }) => (
+                <View key={label} style={s.detailRow}>
+                  <Text style={s.detailLbl}>{label}</Text>
+                  <Text style={s.detailVal}>{value}</Text>
+                </View>
+              ))}
             </View>
-
             <View style={s.divider} />
-
-            <View style={s.cardActions}>
-              <TouchableOpacity style={[s.actionBtn, s.actionBtnPrimary]}>
-                <Ionicons name="navigate" size={20} color={C.nd1} />
-                <Text style={s.actionBtnPrimaryText}>Directions</Text>
+            <View style={s.ccActs}>
+              <TouchableOpacity style={[s.ccBtn, s.ccBtnPri, { flex: 1, height: 48 }]}>
+                <Text style={s.ccBtnPriTxt}>{t.directions}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[s.actionBtn, s.actionBtnSecondary]}>
-                <Ionicons name="call-outline" size={20} color={C.nd2} />
-                <Text style={s.actionBtnSecondaryText}>Call</Text>
+              <TouchableOpacity style={[s.ccBtn, s.ccBtnSec, { flex: 1, height: 48 }]}>
+                <PhoneIcon color={C.inkMid} /><Text style={s.ccBtnSecTxt}>{t.call}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.actionBtn, s.actionBtnCopy]}
-                onPress={() => Clipboard.setStringAsync(expandedClinic.address)}
-              >
-                <Ionicons name="copy-outline" size={20} color={C.nd3} />
+              <TouchableOpacity style={[s.ccBtn, s.ccBtnSec, s.ccBtnIco, { height: 48 }]} onPress={() => Clipboard.setStringAsync(expandedClinic.address)}>
+                <CopyIcon />
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -1127,53 +1493,71 @@ function ResultsScreen({ clinics, spokenText, onBack, onEditQuery }: ResultsScre
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROOT APP — owns only navigation state and search orchestration
+// ROOT APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function CareFindFlowApp() {
   const [step, setStep] = useState<AppStep>('language');
   const [selectedLang, setSelectedLang] = useState<Language | null>(null);
   const [spokenText, setSpokenText] = useState('');
   const [clinics, setClinics] = useState<Clinic[]>([]);
+  const [reply, setReply] = useState('');
 
   const isSpanish = selectedLang?.code === 'es';
+  const t = getUIText(isSpanish);
 
   const handleLanguageSelect = useCallback((lang: Language) => {
-    setSelectedLang(lang);
-    setStep('location');
+    setSelectedLang(lang); setStep('location');
   }, []);
 
   const runSearch = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) {
-      Alert.alert('Missing info', 'Please type or speak your medical need first.');
+      Alert.alert(
+        t.missingInfo,
+        t.missingInfoBody
+      );
       return;
     }
+
     setSpokenText(trimmed);
     setStep('searching');
-    await new Promise(r => setTimeout(r, 1300));
-    setStep('loading');
-    await new Promise(r => setTimeout(r, 1400));
-    setClinics(MOCK_CLINICS);
-    setStep('results');
-  }, []);
 
-  if (step === 'language') return (
-    <LanguageScreen selectedLang={selectedLang} onSelect={handleLanguageSelect} />
-  );
-  if (step === 'location') return (
-    <LocationScreen onBack={() => setStep('language')} onAllow={() => setStep('query')} />
-  );
-  if (step === 'query') return (
-    <QueryScreen isSpanish={isSpanish} onBack={() => setStep('location')} onSearch={runSearch} />
-  );
-  if (step === 'searching') return <SearchingScreen />;
-  if (step === 'loading') return (
-    <LoadingScreen spokenText={spokenText} onBack={() => setStep('query')} />
-  );
+    try {
+      const result = await fetchNavigateResults(trimmed, selectedLang);
+      setStep('loading');
+      await new Promise(r => setTimeout(r, 700));
+
+      setReply(result.reply);
+      setClinics(result.clinics);
+      setStep('results');
+    } catch (error) {
+      console.log('Navigate failed:', error);
+      const message =
+        error instanceof Error ? error.message : t.searchFailedBody;
+
+      setReply(t.couldNotLoadResults);
+      setClinics([]);
+      setStep('query');
+
+      Alert.alert(
+        t.searchError,
+        message
+      );
+    }
+  }, [selectedLang, t]);
+
+  if (step === 'language') return <LanguageScreen selectedLang={selectedLang} onSelect={handleLanguageSelect} />;
+  if (step === 'location') return <LocationScreen isSpanish={isSpanish} onBack={() => setStep('language')} onAllow={() => setStep('query')} />;
+  if (step === 'query') return <QueryScreen isSpanish={isSpanish} onBack={() => setStep('location')} onSearch={runSearch} />;
+  if (step === 'searching') return <SearchingScreen isSpanish={isSpanish} />;
+  if (step === 'loading') return <LoadingScreen spokenText={spokenText} isSpanish={isSpanish} onBack={() => setStep('query')} />;
+
   return (
     <ResultsScreen
       clinics={clinics}
       spokenText={spokenText}
+      selectedLang={selectedLang}
+      reply={reply || t.foundClinics}
       onBack={() => setStep('query')}
       onEditQuery={() => setStep('query')}
     />
@@ -1184,365 +1568,250 @@ export default function CareFindFlowApp() {
 // STYLES
 // ─────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  // ── Utility ───────────────────────────────────────────────────────────────
   flex1: { flex: 1 },
-  fullWidth: { width: '100%' },
-  safe: { flex: 1, backgroundColor: C.nl5 },
-  bold: { fontWeight: '700' },
-  btnIcon: { marginRight: 8 },
-  spacer: { height: 8 },
   mapRoot: { flex: 1, backgroundColor: '#000' },
 
-  // ── Shared layout ─────────────────────────────────────────────────────────
-  topBar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, gap: 8,
-  },
-  backButton: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: C.nl5, borderWidth: 1.5, borderColor: C.nl3,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  navTitle: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '600', color: C.nd1 },
-  navSpacer: { width: 44 },
-  centeredScreen: {
-    flex: 1, justifyContent: 'center',
-    paddingHorizontal: 24, paddingBottom: 40, alignItems: 'center',
-  },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 10 },
-  heroCenter: { alignItems: 'center', marginBottom: 16 },
-  title: {
-    fontSize: 30, fontWeight: '700', color: C.nd1,
-    textAlign: 'center', letterSpacing: -0.3, marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 19, lineHeight: 28, color: C.nd4,
-    textAlign: 'center', marginBottom: 28, maxWidth: 300,
-  },
-  primaryButton: {
-    backgroundColor: C.primary, paddingVertical: 20, borderRadius: 18,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.primary, shadowOpacity: 0.25, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 }, elevation: 3,
-  },
-  primaryButtonText: { fontSize: 20, fontWeight: '700', color: C.nd1 },
+  screen: { flex: 1, backgroundColor: C.offWhite },
 
-  // ── Language screen ───────────────────────────────────────────────────────
-  langHeader: {
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 18,
-    alignItems: 'center', borderBottomWidth: 1, borderBottomColor: C.nl3,
-  },
-  langIconBg: {
-    width: 68, height: 68, borderRadius: 20,
-    backgroundColor: C.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-  },
-  langTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  langTitleStatic: { fontSize: 34, fontWeight: '800', color: C.nd1 },
-  langTitleAnimated: { fontSize: 34, fontWeight: '800', color: C.primaryDark },
-  langSubtitle: { fontSize: 20, color: C.nd4, textAlign: 'center', lineHeight: 28 },
-  searchWrap: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.nl5 },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: C.nl4, borderRadius: 14, borderWidth: 1.5, borderColor: C.nl3,
-    paddingHorizontal: 14, height: 52,
-  },
-  searchInput: { flex: 1, fontSize: 20, color: C.nd1 },
-  langListContent: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 120 },
-  listSectionHeader: {
-    paddingHorizontal: 8, paddingTop: 10, paddingBottom: 6,
-    fontSize: 14, fontWeight: '700', color: C.nd5, letterSpacing: 0.9, textTransform: 'uppercase',
-  },
-  langRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 16,
-    paddingVertical: 20, paddingHorizontal: 18,
-    borderRadius: 16, marginBottom: 8, borderWidth: 1.5,
-  },
-  langRowOutline: { backgroundColor: C.nl5, borderColor: C.nl3 },
-  langRowSelected: { backgroundColor: C.primaryXlight, borderColor: C.primary },
-  langFlag: { fontSize: 30 },
-  langRowName: { fontSize: 22, fontWeight: '600', color: C.nd2 },
-  langRowNameSelected: { color: C.primaryDark, fontWeight: '700' },
-  langRowNative: { fontSize: 17, color: C.nd5, marginTop: 3 },
-  checkCircle: {
+  hero: { width: '100%', flexShrink: 0, backgroundColor: C.blueHero },
+
+  statusBar: { height: 0, overflow: 'hidden' },
+  statusTime: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  statusIcons: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+
+  heroInner: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 14, alignItems: 'center' },
+  heroH1: { fontSize: 26, fontWeight: '700', color: 'white', lineHeight: 32, letterSpacing: -0.4, textAlign: 'center' },
+  heroH1Em: { fontSize: 26, fontWeight: '700', color: C.pinkSoft, lineHeight: 32, letterSpacing: -0.4 },
+  heroSub: { fontSize: 16, color: 'rgba(255,255,255,0.82)', lineHeight: 23, marginTop: 6, textAlign: 'center' },
+
+  navBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 14, gap: 10 },
+  navBtn: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center',
-  },
-  langFooter: {
-    paddingHorizontal: 20, paddingBottom: 12, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: C.nl3, backgroundColor: C.nl5,
-  },
-
-  // ── Onboarding progress bar footer ───────────────────────────────────────
-  onboardingFooter: {
-    paddingHorizontal: 24, paddingBottom: 28, paddingTop: 14,
-    backgroundColor: C.nl5, borderTopWidth: 1, borderTopColor: C.nl3,
-    gap: 10,
-  },
-  progressStepRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-  },
-  progressDot: {
-    width: 8, height: 8, borderRadius: 4,
-  },
-  progressDotActive: { backgroundColor: C.primaryDark },
-  progressDotInactive: { backgroundColor: C.nl2 },
-  progressLabel: {
-    fontSize: 13, fontWeight: '600', color: C.nd5,
-    marginLeft: 4, letterSpacing: 0.3,
-  },
-  progressTrack: {
-    height: 6, backgroundColor: C.nl3, borderRadius: 3, overflow: 'hidden',
-  },
-  progressFill: {
-    height: 6, backgroundColor: C.primary, borderRadius: 3,
-  },
-
-  // ── Location screen ───────────────────────────────────────────────────────
-  pinIllus: { width: 190, height: 190, alignItems: 'center', justifyContent: 'center', marginBottom: 28 },
-  pulseRing: { position: 'absolute', backgroundColor: 'rgba(115,199,227,0.13)' },
-  pinWrap: { position: 'absolute', alignItems: 'center', justifyContent: 'center', zIndex: 2 },
-  pinBase: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: C.nl5, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5,
-  },
-  trustCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 14,
-    backgroundColor: C.nl4, borderWidth: 1.5, borderColor: C.nl3,
-    borderRadius: 18, padding: 18, marginBottom: 28, width: '100%',
-  },
-  trustIcon: {
-    width: 44, height: 44, borderRadius: 13,
-    backgroundColor: C.primaryLight, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  trustTitle: { fontSize: 17, fontWeight: '700', color: C.nd2, marginBottom: 4 },
-  trustBody: { fontSize: 16, color: C.nd4, lineHeight: 23 },
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', alignItems: 'center', padding: 32,
-  },
-  alertModal: { backgroundColor: C.nl5, borderRadius: 22, padding: 30, alignItems: 'center', width: '100%' },
-  alertTitle: { fontSize: 24, fontWeight: '700', color: C.nd1, marginBottom: 10, textAlign: 'center' },
-  alertBody: { fontSize: 18, lineHeight: 26, color: C.nd3, textAlign: 'center' },
-  modalIcon: { marginBottom: 14 },
-  modalBtn: { marginTop: 22, width: '100%' },
-
-  // ── Query screen ──────────────────────────────────────────────────────────
-  signInPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingHorizontal: 15, paddingVertical: 10,
-    backgroundColor: C.primaryXlight, borderRadius: 24,
-    borderWidth: 1, borderColor: C.primaryLight,
-  },
-  signInText: { fontSize: 17, fontWeight: '600', color: C.primaryDark },
-  queryIconRing: {
-    width: 106, height: 106, borderRadius: 53,
-    backgroundColor: C.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-  },
-  modeSlider: {
-    flexDirection: 'row', backgroundColor: C.nl4,
-    borderRadius: 32, padding: 4, marginBottom: 10,
-    borderWidth: 1.5, borderColor: C.nl3, position: 'relative',
-  },
-  modeSliderActive: {
-    position: 'absolute', top: 4, bottom: 4,
-    backgroundColor: C.primary, borderRadius: 28,
-    shadowColor: C.primary, shadowOpacity: 0.25, shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
-  },
-  modeSliderOption: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 9, paddingVertical: 16, zIndex: 1,
-  },
-  modeSliderText: { fontSize: 19, fontWeight: '600', color: C.nd4 },
-  modeSliderTextActive: { color: C.nd1 },
-
-  // Start Speaking button
-  startSpeakingBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14,
-    backgroundColor: C.primary, paddingVertical: 22, borderRadius: 18,
-    shadowColor: C.primary, shadowOpacity: 0.25, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 }, elevation: 2,
-    marginBottom: 0,
-  },
-  startSpeakingText: { fontSize: 22, fontWeight: '700', color: C.nd1 },
-
-  // Recording box — waveform + stop button, springs open while mic is active
-  recordingBox: {
-    marginTop: 14,
-    backgroundColor: C.nl4, borderColor: C.nl3, borderRadius: 18,
-    overflow: 'hidden',
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 18,
-  },
-  waveformContainer: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    flex: 1, height: 44,
-  },
-  waveBar: { width: 4, height: 30, borderRadius: 2 },
-  listeningLabel: { fontSize: 17, color: C.nd4, fontWeight: '500', marginRight: 12 },
-
-  // Red stop button — sits in the top-right corner of the recording box
-  stopBtnInBox: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: '#D0342C',
+    backgroundColor: 'rgba(255,255,255,0.22)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.30)',
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    shadowColor: '#D0342C', shadowOpacity: 0.4, shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 }, elevation: 4,
   },
 
-  // Transcript card — appears below Start Speaking after recording stops
-  transcriptCard: {
-    marginTop: 14,
-    backgroundColor: C.nl5, borderWidth: 1.5, borderColor: C.primaryLight,
-    borderRadius: 16, padding: 16,
-    shadowColor: C.primary, shadowOpacity: 0.1, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
-  },
-  transcriptCardHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10,
-  },
-  transcriptCardLabel: {
-    flex: 1, fontSize: 13, fontWeight: '700', color: C.primaryDark,
-    textTransform: 'uppercase', letterSpacing: 0.7,
-  },
-  transcriptCardText: { fontSize: 18, color: C.nd1, lineHeight: 27 },
+  bodyFlex: { flex: 1, overflow: 'hidden', backgroundColor: C.offWhite },
+  bodyScroll: { padding: 16, paddingBottom: 24 },
 
-  // Text input box — always rendered, height animated
-  queryInputAnimated: {
-    marginTop: 14,
-    backgroundColor: C.nl4, borderColor: C.nl3, borderRadius: 18,
+  iconRing: {
+    width: 52, height: 52, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.20)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.30)',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginBottom: 10,
   },
-  transcriptBox: { flexDirection: 'row', alignItems: 'flex-start', padding: 16, gap: 10 },
-  transcriptScroll: { flex: 1, maxHeight: 200 },
-  transcriptInput: {
-    flex: 1, fontSize: 18, color: C.nd1, lineHeight: 27,
-    textAlignVertical: 'top', minHeight: 44,
-  },
-  stopSendBtn: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: C.nl5, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: C.nl3, flexShrink: 0, marginTop: 1,
-  },
-  queryDisclaimer: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: C.warnLight, borderWidth: 1, borderColor: '#f0c090',
-    borderRadius: 14, padding: 14,
-  },
-  disclaimerTop: { marginTop: 16 },
-  queryDisclaimerText: { flex: 1, fontSize: 17, fontWeight: '500', color: C.warnDark, lineHeight: 25 },
+  iconRingSm: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.blueXpale, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  iconRingPk: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.pinkPale, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 
-  // ── Searching screen ──────────────────────────────────────────────────────
-  spinnerRing: {
-    width: 72, height: 72, borderRadius: 36,
-    borderWidth: 4, borderColor: C.primaryLight, borderTopColor: C.primary, marginBottom: 26,
+  searchLift: { marginHorizontal: 16, marginTop: -20, zIndex: 10, marginBottom: 10 },
+  searchBar: {
+    backgroundColor: C.white, borderRadius: 18,
+    shadowColor: C.blueDeep, shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5,
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 10, height: 52,
   },
-  loadingTitle: { fontSize: 22, fontWeight: '700', color: C.nd1, textAlign: 'center', marginBottom: 10 },
-  loadingSubtitle: { fontSize: 18, color: C.nd4, textAlign: 'center' },
+  searchInput: { flex: 1, fontSize: 17, color: C.ink },
+  searchArrow: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.blueMid, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 
-  // ── Loading screen (skeleton) ─────────────────────────────────────────────
-  queryPillWrap: { paddingHorizontal: 16, paddingBottom: 12 },
-  queryPill: {
+  sectionLbl: { fontSize: 9, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase', color: C.inkSoft, marginBottom: 8 },
+
+  langRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: C.nl4, borderWidth: 1.5, borderColor: C.nl3,
-    borderRadius: 13, paddingHorizontal: 15, paddingVertical: 12,
+    paddingVertical: 14, paddingHorizontal: 14, borderRadius: 14,
+    backgroundColor: C.white, borderWidth: 1.5, borderColor: 'transparent',
+    shadowColor: C.blueDeep, shadowOpacity: 0.10, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    marginBottom: 7,
   },
-  queryPillText: { flex: 1, fontSize: 18, color: C.nd3 },
-  queryPillEdit: { fontSize: 17, fontWeight: '600', color: C.primaryDark },
-  skeletonWrap: { flex: 1, padding: 16, gap: 14 },
-  skeletonCard: {
-    backgroundColor: C.nl5, borderWidth: 1.5, borderColor: C.nl3,
-    borderRadius: 22, padding: 20, gap: 13,
-  },
-  skeletonRow: { flexDirection: 'row', gap: 13, alignItems: 'center' },
-  skeletonCircle: { width: 44, height: 44, borderRadius: 13, backgroundColor: C.nl3 },
-  skeletonLine: { height: 13, borderRadius: 7, backgroundColor: C.nl3, marginBottom: 9 },
-  skeletonBlock: { height: 70, borderRadius: 13, backgroundColor: C.nl3 },
-  skeletonBtnRow: { flexDirection: 'row', gap: 8 },
-  skeletonBtn: { flex: 1, height: 44, borderRadius: 12 },
-  skeletonBtnSm: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.nl3 },
+  langRowSel: { borderColor: C.blueMid, backgroundColor: C.blueXpale },
+  langFlag: { fontSize: 26, lineHeight: 30, flexShrink: 0 },
+  langName: { fontSize: 18, fontWeight: '700', color: C.ink },
+  langNat: { fontSize: 14, color: C.inkSoft, marginTop: 2 },
+  checkCircle: { width: 20, height: 20, borderRadius: 10, backgroundColor: C.blueMid, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 
-  // ── Results screen ────────────────────────────────────────────────────────
-  floatingBack: {
-    margin: 16, width: 46, height: 46, borderRadius: 23,
-    backgroundColor: C.nl5, alignItems: 'center', justifyContent: 'center',
+  langFooter: { paddingHorizontal: 16, paddingBottom: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.white },
+
+  progFooter: { paddingHorizontal: 18, paddingBottom: 20, paddingTop: 12, backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.border },
+  progMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  progDot: { width: 6, height: 6, borderRadius: 3 },
+  progDotOn: { backgroundColor: C.blueMid },
+  progDotOff: { backgroundColor: C.bluePale },
+  progLabel: { fontSize: 14, fontWeight: '700', color: C.inkSoft, marginLeft: 4 },
+  progTrack: { height: 4, backgroundColor: C.bluePale, borderRadius: 999, overflow: 'hidden' },
+  progFill: { height: 4, borderRadius: 999, backgroundColor: C.blueMid },
+
+  btnBlue: {
+    backgroundColor: C.blueMid, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.blueDeep, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3,
+  },
+  btnBlueText: { fontSize: 17, fontWeight: '700', color: C.white },
+
+  btnPink: {
+    backgroundColor: C.pinkMid, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.pinkMid, shadowOpacity: 0.28, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3,
+  },
+  btnPinkText: { fontSize: 17, fontWeight: '700', color: C.white },
+
+  btnGhost: {
+    backgroundColor: C.white, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border,
+    shadowColor: C.blueDeep, shadowOpacity: 0.10, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  btnGhostText: { fontSize: 17, fontWeight: '700', color: C.inkMid },
+
+  card: {
+    backgroundColor: C.white, borderRadius: 18, padding: 14,
+    shadowColor: C.blueDeep, shadowOpacity: 0.10, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  cardH2: { fontSize: 18, fontWeight: '700', color: C.ink, marginBottom: 4 },
+  cardBody: { fontSize: 15, color: C.inkSoft, lineHeight: 22 },
+
+  infoItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.border },
+  infoDot: { width: 7, height: 7, borderRadius: 4, flexShrink: 0, marginTop: 4 },
+  infoText: { fontSize: 15, color: C.inkMid, lineHeight: 22, flex: 1 },
+  infoStrong: { fontWeight: '700', color: C.ink },
+
+  locIllus: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.30)',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+  },
+
+  signInPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: C.pinkMid },
+  signInText: { fontSize: 13, fontWeight: '700', color: C.white },
+
+  modeSlider: {
+    flexDirection: 'row', backgroundColor: C.white, borderRadius: 999, padding: 3,
+    borderWidth: 1.5, borderColor: C.border,
+    shadowColor: C.blueDeep, shadowOpacity: 0.10, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    marginBottom: 12,
+  },
+  modeOpt: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 999, backgroundColor: 'transparent' },
+  modeOptOn: { backgroundColor: C.blueMid, shadowColor: C.blueDeep, shadowOpacity: 0.22, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  modeOptTxt: { fontSize: 15, fontWeight: '700', color: C.inkSoft },
+  modeOptTxtOn: { color: C.white },
+
+  speakBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: C.blueMid, paddingVertical: 16, borderRadius: 18,
+    shadowColor: C.blueDeep, shadowOpacity: 0.22, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3, marginBottom: 11,
+  },
+  speakBtnText: { fontSize: 17, fontWeight: '700', color: C.white },
+
+  recordingBox: {
+    backgroundColor: C.blueXpale, borderColor: C.bluePale, borderRadius: 18, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14,
+  },
+  waveWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1, height: 44 },
+  waveBar: { width: 4, height: 28, borderRadius: 2 },
+  listeningLbl: { fontSize: 15, color: C.inkMid, fontWeight: '600', marginRight: 10 },
+  stopBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#D0342C', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  stopDot: { width: 12, height: 12, borderRadius: 2, backgroundColor: C.white },
+
+  trCard: { marginTop: 11, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.bluePale, borderRadius: 18, padding: 14 },
+  trCardHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  trCardLbl: { flex: 1, fontSize: 13, fontWeight: '700', color: C.blueDeep, textTransform: 'uppercase', letterSpacing: 1 },
+  trClear: { fontSize: 14, color: C.inkSoft },
+  trCardTxt: { fontSize: 16, color: C.ink, lineHeight: 24 },
+
+  textBox: { backgroundColor: C.white, borderColor: C.border, borderRadius: 18 },
+  textBoxInput: { fontSize: 16, color: C.ink, lineHeight: 24, padding: 14, textAlignVertical: 'top', minHeight: 90 },
+
+  disclaimer: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10, paddingHorizontal: 12, backgroundColor: C.pinkPale, borderRadius: 10, borderWidth: 1, borderColor: C.pinkSoft },
+  disclaimerTxt: { fontSize: 14, color: C.pinkMid, fontWeight: '600', lineHeight: 20, flex: 1 },
+
+  spinner: { width: 48, height: 48, borderRadius: 24, borderWidth: 3, borderColor: C.bluePale, borderTopColor: C.blueDeep, marginBottom: 20 },
+  loadTitle: { fontSize: 21, fontWeight: '700', color: C.ink, textAlign: 'center', marginBottom: 6 },
+  loadSub: { fontSize: 16, color: C.inkMid, textAlign: 'center' },
+
+  loadTopBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 10, gap: 8 },
+  loadBackBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  loadNavTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700', color: C.ink },
+  qPillWrap: { paddingHorizontal: 16, paddingBottom: 12 },
+  qPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 7,
+    shadowColor: C.blueDeep, shadowOpacity: 0.10, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  qPillText: { flex: 1, fontSize: 15, color: C.ink, fontWeight: '600' },
+  qPillEdit: { fontSize: 15, fontWeight: '700', color: C.blueDeep },
+  skelCard: { backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border, borderRadius: 18, padding: 14, gap: 10 },
+  skelRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  skelCircle: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.border },
+  skelLine: { height: 10, borderRadius: 5, backgroundColor: C.border, marginBottom: 6 },
+  skelBlock: { height: 56, borderRadius: 10, backgroundColor: C.border },
+
+  floatBack: {
+    margin: 16, width: 30, height: 30, borderRadius: 15, backgroundColor: C.white,
+    alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 5,
   },
   bottomSheet: {
-    position: 'absolute', left: 0, right: 0,
-    height: SCREEN_HEIGHT * 0.96,
-    backgroundColor: C.nl5,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -4 }, elevation: 10,
+    position: 'absolute', left: 0, right: 0, height: SCREEN_HEIGHT * 0.96,
+    backgroundColor: C.offWhite, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -6 }, elevation: 10,
   },
-  sheetHandleArea: { paddingTop: 14, paddingBottom: 14, alignItems: 'center' },
-  sheetScrollContent: { padding: 16, paddingTop: 0 },
-  aiOverviewBox: {
-    backgroundColor: C.primaryXlight, borderWidth: 1, borderColor: C.primaryLight,
-    borderRadius: 16, padding: 18, marginBottom: 16,
-  },
-  aiOverviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 9 },
-  aiOverviewLabel: {
-    fontSize: 14, fontWeight: '700', color: C.primaryDark,
-    textTransform: 'uppercase', letterSpacing: 0.7,
-  },
-  aiOverviewText: { fontSize: 17, color: C.nd3, lineHeight: 26 },
-  resultsCountRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14,
-  },
-  resultsCount: { fontSize: 17, fontWeight: '600', color: C.nd4 },
-  resultsHint: { fontSize: 15, color: C.nd5 },
-  collapsedCard: {
-    backgroundColor: C.nl5, borderWidth: 1.5, borderColor: C.nl3,
-    borderRadius: 22, padding: 22, marginBottom: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-  },
-  cardName: { fontSize: 20, fontWeight: '700', color: C.nd1, marginBottom: 12, letterSpacing: -0.1 },
-  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, alignItems: 'center' },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  badgeText: { fontSize: 17, fontWeight: '600' },
-  disclaimer: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: C.warnLight, borderWidth: 1, borderColor: '#f0c090',
-    borderRadius: 14, padding: 14, marginTop: 8,
-  },
-  disclaimerIcon: { marginTop: 1 },
-  disclaimerText: { flex: 1, fontSize: 16, fontWeight: '500', color: C.warnDark, lineHeight: 23 },
+  sheetHandleArea: { paddingTop: 14, paddingBottom: 12, alignItems: 'center' },
+  sheetHandle: { width: 0, height: 0, borderLeftWidth: 9, borderRightWidth: 9, borderTopWidth: 7, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: C.inkSoft, opacity: 0.35 },
+  sheetScroll: { padding: 14, paddingTop: 0, paddingBottom: 20 },
 
-  // ── Expanded card sheet ───────────────────────────────────────────────────
+  aiBox: { backgroundColor: C.blueXpale, borderWidth: 1, borderColor: C.bluePale, borderRadius: 18, padding: 12, marginBottom: 12 },
+  aiHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  aiLbl: { fontSize: 12, fontWeight: '700', letterSpacing: 1.8, textTransform: 'uppercase', color: C.blueDeep },
+  aiTxt: { fontSize: 15, color: C.inkMid, lineHeight: 23 },
+  aiTtsBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 12, backgroundColor: C.white, borderWidth: 1, borderColor: C.bluePale },
+
+  resMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9 },
+  resCount: { fontSize: 13, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', color: C.inkSoft },
+  resHint: { fontSize: 13, color: C.inkSoft },
+
+  clinicCard: {
+    backgroundColor: C.white, borderRadius: 18, padding: 13, marginBottom: 10,
+    borderWidth: 1.5, borderColor: 'transparent',
+    shadowColor: C.blueDeep, shadowOpacity: 0.10, shadowRadius: 7, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  clinicCardTop: { borderColor: C.bluePale },
+  ccHead: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', marginBottom: 8 },
+  ccName: { fontSize: 17, fontWeight: '700', color: C.ink, lineHeight: 23, marginBottom: 4 },
+  ccAddr: { fontSize: 14, color: C.inkSoft },
+
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  badgeText: { fontSize: 13, fontWeight: '700' },
+
+  ccSummary: { padding: 8, paddingHorizontal: 10, backgroundColor: C.offWhite, borderRadius: 8, borderLeftWidth: 2.5, borderLeftColor: C.blueHero, marginBottom: 9 },
+  ccSummaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  ccSummaryTxt: { fontSize: 14, color: C.inkSoft, lineHeight: 21 },
+  ccSummaryTtsBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.blueXpale, borderWidth: 1, borderColor: C.bluePale, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
+
+  ccActs: { flexDirection: 'row', gap: 6 },
+  ccBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  ccBtnPri: { backgroundColor: C.blueMid, shadowColor: C.blueDeep, shadowOpacity: 0.22, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  ccBtnPriTxt: { fontSize: 15, fontWeight: '700', color: C.white },
+  ccBtnSec: { backgroundColor: C.offWhite, borderWidth: 1.5, borderColor: C.border },
+  ccBtnSecTxt: { fontSize: 15, fontWeight: '700', color: C.inkMid },
+  ccBtnIco: { flex: 0, width: 34, paddingVertical: 8 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 32 },
+  alertModal: { backgroundColor: C.white, borderRadius: 22, padding: 24, alignItems: 'center', width: '100%' },
+  alertTitle: { fontSize: 18, fontWeight: '700', color: C.ink, marginBottom: 8, textAlign: 'center' },
+  alertBody: { fontSize: 14, lineHeight: 21, color: C.inkMid, textAlign: 'center' },
+
   expandedSheet: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
-    height: SCREEN_HEIGHT * 0.90,
-    backgroundColor: C.nl5,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: SCREEN_HEIGHT * 0.88,
+    backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 12,
   },
-  expandedDragStrip: { paddingTop: 14, paddingBottom: 14, alignItems: 'center' },
-  expandedScrollContent: { padding: 22, paddingTop: 4 },
-  expandedCardName: { fontSize: 22, marginBottom: 14 },
-  closeBtn: {
-    position: 'absolute', right: 18, top: 10,
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: C.nl3, alignItems: 'center', justifyContent: 'center', zIndex: 20,
-  },
-  divider: { height: 1, backgroundColor: C.nl3, marginVertical: 18 },
-  aiSummaryBox: {
-    backgroundColor: C.primaryXlight, borderWidth: 1, borderColor: C.primaryLight, borderRadius: 14, padding: 16,
-  },
-  detailList: { gap: 16 },
-  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 13 },
-  detailText: { flex: 1, fontSize: 18, color: C.nd4, lineHeight: 26 },
-  detailLabel: { fontWeight: '600', color: C.nd2 },
-  cardActions: { flexDirection: 'row', gap: 10 },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 56, borderRadius: 15,
-  },
-  actionBtnPrimary: {
-    flex: 1, backgroundColor: C.primary,
-    shadowColor: C.primary, shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 2,
-  },
-  actionBtnPrimaryText: { fontSize: 18, fontWeight: '600', color: C.nd1 },
-  actionBtnSecondary: { flex: 1, backgroundColor: C.nl4, borderWidth: 1.5, borderColor: C.nl2 },
-  actionBtnSecondaryText: { fontSize: 18, fontWeight: '600', color: C.nd2 },
-  actionBtnCopy: { width: 56, backgroundColor: C.nl4, borderWidth: 1.5, borderColor: C.nl2 },
+  expandedDrag: { paddingTop: 14, paddingBottom: 12, alignItems: 'center' },
+  expandedScroll: { padding: 18, paddingTop: 4 },
+  expandedName: { fontSize: 21, fontWeight: '700', color: C.ink, marginBottom: 12 },
+  ttsBtnTxt: { fontSize: 13, color: C.blueDeep, fontWeight: '700' },
+  closeBtn: { position: 'absolute', right: 16, top: 10, width: 36, height: 36, borderRadius: 18, backgroundColor: C.border, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
+  closeTxt: { fontSize: 16, color: C.inkMid, fontWeight: '700' },
+
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 14 },
+  detailList: { gap: 12 },
+  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  detailLbl: { fontSize: 15, fontWeight: '700', color: C.ink, width: 68 },
+  detailVal: { flex: 1, fontSize: 15, color: C.inkMid, lineHeight: 22 },
 });
