@@ -623,7 +623,10 @@ function QueryScreen({ isSpanish, onBack, onSearch }: QueryScreenProps) {
     inputRange: [0, 1], outputRange: [0, 140],
   });
   const textBoxOpacity = textBoxAnim.interpolate({
-    inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp',
+    inputRange: [0, 0.25, 1], outputRange: [0, 0, 1], extrapolate: 'clamp',
+  });
+  const textBoxMarginTop = textBoxAnim.interpolate({
+    inputRange: [0, 1], outputRange: [0, 10],
   });
 
   const activeQuery = inputMode === 'speak' ? transcript : textInput;
@@ -749,6 +752,7 @@ function QueryScreen({ isSpanish, onBack, onSearch }: QueryScreenProps) {
             style={[s.queryInputAnimated, {
               height: textBoxHeight,
               opacity: textBoxOpacity,
+              marginTop: textBoxMarginTop,
               borderWidth: 1.5,
               overflow: 'hidden',
             }]}
@@ -770,9 +774,6 @@ function QueryScreen({ isSpanish, onBack, onSearch }: QueryScreenProps) {
                   autoFocus={inputMode === 'text'}
                 />
               </ScrollView>
-              <TouchableOpacity style={s.stopSendBtn} onPress={() => onSearch(textInput)} activeOpacity={0.8}>
-                <Ionicons name="send" size={26} color={C.primaryDark} />
-              </TouchableOpacity>
             </View>
           </Animated.View>
 
@@ -1410,7 +1411,6 @@ const s = StyleSheet.create({
 
   // Text input box — always rendered, height animated
   queryInputAnimated: {
-    marginTop: 14,
     backgroundColor: C.nl4, borderColor: C.nl3, borderRadius: 18,
   },
   transcriptBox: { flexDirection: 'row', alignItems: 'flex-start', padding: 16, gap: 10 },
