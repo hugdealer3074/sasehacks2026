@@ -22,12 +22,6 @@ app.add_middleware(
 )
 # --------------------------------------
 
-# Configure Gemini based on the environment variable
-# The key should be loaded before running the app
-
-if gemini_api_key:
-    genai.configure(api_key=gemini_api_key)
-
 class MedicalRequest(BaseModel):
     user_input: str
 
@@ -46,9 +40,9 @@ MOCK_DATABASE_RESULTS = [
 async def navigate(request: NavigateRequest):
     print(f"Gemini processing for {request.language}: {request.text}")
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        client = genai.Client(api_key=gemini_api_key)
         prompt = f"User is asking in {request.language}: '{request.text}'. Give a 1-sentence helpful response in {request.language}."
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         reply = response.text
     except Exception as e:
         print(f"Error in Gemini processing for navigate: {e}")
