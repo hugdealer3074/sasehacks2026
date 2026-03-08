@@ -246,8 +246,21 @@ def compute_match_score(patient: KeywordSet, location: KeywordSet) -> dict:
 def root():
     return {"message": "Backend is running."}
 
+@app.post("/translate-request")
+def translate_request(request: NavigateRequest, isSpanish: bool):
+    if isSpanish:
+        request.text = translate_text_with_deepl(request.text, "ES", "EN")
+    return request
+
+@app.post("/translate-summary")
+def translate_summary(summary: str, isSpanish: bool):
+    if isSpanish:
+        summary = translate_text_with_deepl(summary, "EN", "ES")
+    return summary
+        
 @app.post("/navigate")
 async def navigate(request: NavigateRequest):
+    request = translate_request(request)
     top_clinics = []
     try:
         genai.configure(api_key=gemini_api_key)
@@ -255,6 +268,8 @@ async def navigate(request: NavigateRequest):
         prompt = f"User is asking in {request.language}: '{request.text}'. Give a short helpful response in {request.language}."
         response = model.generate_content(prompt)
         reply = response.text
+
+
         user_json = await interpret_medical_needs(request)
 
         patient_keywords = parse_keywords(user_json)
