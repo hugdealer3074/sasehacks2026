@@ -65,7 +65,8 @@ class ClinicEntry(BaseModel):
     phone: Optional[str] = None
     hours: Optional[str] = None
     languages: list[str] = []
-    services_offered: Optional[str] = None
+    aisummary: Optional[str] = None
+    translatedSummary: Optional[str] = None
 
 # --- UTILITIES ---
 
@@ -106,10 +107,10 @@ def get_source_lang_code(language: str) -> Optional[str]:
     if normalized in ["español", "espanol", "spanish", "es"]:
         return "ES"
     if normalized in ["english", "en"]:
-        return "EN"
+        return "EN-US"
     return None
 
-def translate_text_with_deepl(text: str, source_lang: str, target_lang: str = "EN") -> str:
+def translate_text_with_deepl(text: str, target_lang: str) -> str:
     if not deepl_api_key:
         raise HTTPException(
             status_code=500,
@@ -124,7 +125,6 @@ def translate_text_with_deepl(text: str, source_lang: str, target_lang: str = "E
         },
         json={
             "text": [text],
-            "source_lang": source_lang,
             "target_lang": target_lang,
         },
         timeout=60,
@@ -247,21 +247,24 @@ def root():
     return {"message": "Backend is running."}
 
 @app.post("/translate-request")
-def translate_request(request: NavigateRequest, isSpanish: bool):
-    if isSpanish:
-        request.text = translate_text_with_deepl(request.text, "ES", "EN")
+def translate_request(request: NavigateRequest):
+    request.text = translate_text_with_deepl(request.text,"EN-US")
     return request
 
 @app.post("/translate-summary")
-def translate_summary(summary: str, isSpanish: bool):
-    if isSpanish:
-        summary = translate_text_with_deepl(summary, "EN", "ES")
-    return summary
+def translate_summary(summary: str):
+    try:
+        summary = translate_text_with_deepl(summary, "ES")
+        return summary
+    except Exception as e:
+        return None
+    
         
 @app.post("/navigate")
 async def navigate(request: NavigateRequest):
     request = translate_request(request)
     top_clinics = []
+    reply = ""
     try:
         genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel("gemini-2.5-flash")
@@ -274,7 +277,7 @@ async def navigate(request: NavigateRequest):
 
         patient_keywords = parse_keywords(user_json)
 
-        async for clinic in clinics_collection.find({}):
+        async for clinic in clinics_collection.find({}, {"_id": 0}):
             clinic = ClinicEntry(**clinic)
             match_data = compute_match_score(patient_keywords, clinic.metadata)
             top_clinics.append({
@@ -286,8 +289,8 @@ async def navigate(request: NavigateRequest):
                 "hours": clinic.hours,
                 "phone": clinic.phone,
                 "match_score": match_data["score"],
-                "aiSummary": clinic.aisummary,
-                "translatedSummary": translate_summary(clinic.aisummary, request.isSpanish),
+                "aisummary": clinic.aisummary or "",
+                "translatedSummary": translate_summary(clinic.aisummary or ""),
                 "lowCost": "Low" in clinic.price_tag or "NAFC" in clinic.price_tag,
             })
         top_clinics.sort(key=lambda x: x["match_score"], reverse=True)
