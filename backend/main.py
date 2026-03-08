@@ -15,7 +15,11 @@ from keys import get_gemini_key
 
 # Load variables from .env into the environment
 load_dotenv()
-gemini_api_key = get_gemini_key()
+try:
+    gemini_api_key = get_gemini_key()
+except Exception:
+    print("WARNING: Gemini API key not found. Running in speech-only mode.")
+    gemini_api_key = None
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
 deepl_api_key = os.getenv("DEEPL_API_KEY")
 
@@ -102,7 +106,7 @@ def clean_transcript(text: str) -> str:
         text = re.sub(filler, "", text, flags=re.IGNORECASE)
 
     # Remove stray punctuation except normal sentence punctuation
-    text = re.sub(r"[^\w\sáéíóúñÁÉÍÓÚÑ.,!?]", "", text)
+    text = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s.,!?]", "", text)
 
     # Normalize whitespace
     text = re.sub(r"\s+", " ", text)
