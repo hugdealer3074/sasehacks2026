@@ -1,12 +1,19 @@
-# Python
-backend/venv/
-backend/__pycache__/
+# --- Python / Backend ---
+backend/.venv/
+venv/
+.venv/
+**/__pycache__/
 *.pyc
+backend/requirements.txt.bak
 
-# Expo / React Native
+# --- Expo / React Native / Frontend ---
 frontend/node_modules/
+node_modules/
 frontend/.expo/
+.expo/
 frontend/dist/
 
-# Credentials
+# --- Environment & Secrets ---
 .env
+keys.py
+__pycache__/

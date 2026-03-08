@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import google.generativeai as genai
 from keys import get_gemini_key
@@ -10,6 +11,15 @@ gemini_api_key = get_gemini_key()
 
 app = FastAPI()
 
+# --- ADDED FOR FRONTEND CONNECTION ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# --------------------------------------
+
 # Configure Gemini based on the environment variable
 # The key should be loaded before running the app
 
@@ -18,6 +28,35 @@ if gemini_api_key:
 
 class MedicalRequest(BaseModel):
     user_input: str
+
+# --- ADDED FOR FRONTEND NAVIGATION ---
+class NavigateRequest(BaseModel):
+    text: str
+    language: str = "English"
+
+MOCK_DATABASE_RESULTS = [
+    {"id": "1", "name": "Miami Rescue Mission", "address": "2250 NW 1st Ave", "lat": 25.7984, "lng": -80.1989, "tag": "Free"},
+    {"id": "2", "name": "Camillus Health Concern", "address": "336 NW 5th St", "lat": 25.7794, "lng": -80.1982, "tag": "Low-Cost"},
+    {"id": "3", "name": "Open Door Health", "address": "1350 NW 14th St", "lat": 25.7891, "lng": -80.2185, "tag": "Sliding Scale"},
+]
+
+@app.post("/navigate")
+async def navigate(request: NavigateRequest):
+    print(f"Gemini processing for {request.language}: {request.text}")
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        prompt = f"User is asking in {request.language}: '{request.text}'. Give a 1-sentence helpful response in {request.language}."
+        response = model.generate_content(prompt)
+        reply = response.text
+    except Exception as e:
+        print(f"Error in Gemini processing for navigate: {e}")
+        reply = "I found these clinics for you."
+    
+    return {
+        "reply": reply,
+        "clinics": MOCK_DATABASE_RESULTS 
+    }
+# --------------------------------------
 
 @app.post("/interpret")
 async def interpret_medical_needs(request: MedicalRequest):
@@ -83,5 +122,3 @@ async def summarize_location(location: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-
