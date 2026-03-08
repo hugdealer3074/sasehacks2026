@@ -268,9 +268,15 @@ async def navigate(request: NavigateRequest):
                 "lat": clinic.location.lat,
                 "lng": clinic.location.lng,
                 "tag": clinic.price_tag,
-                "match_score": match_data["score"]
+                "hours": clinic.hours,
+                "phone": clinic.phone,
+                "match_score": match_data["score"],
+                "aiSummary": clinic.aisummary,
+                "lowCost": "Low" in clinic.price_tag or "NAFC" in clinic.price_tag,
             })
         top_clinics.sort(key=lambda x: x["match_score"], reverse=True)
+        for i in range(len(top_clinics)):
+            top_clinics[i]["id"] = str(i)
         top_clinics = top_clinics[:5]
     except Exception as e:
         print(f"Error in Gemini processing for navigate: {e}")
